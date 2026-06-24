@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+{% block title %}Detail Agent{% endblock %}
+{% block content %}
+<div class="topbar" id="topbar-area">
+  <div class="topbar-left"><h1 id="agent-title">Chargement...</h1><p id="agent-subtitle"></p></div>
+  <div class="topbar-right">
+    <a href="/agents" class="btn btn-ghost btn-sm">← Agents</a>
+    <button class="btn btn-outline btn-sm" id="toggle-btn" onclick="toggleAgent()"></button>
+    <button class="btn btn-jade btn-sm" onclick="goToNewCampaign()">+ Nouvelle campagne</button>
+  </div>
+</div>
+<div class="content">
+  <div id="agent-content">
+    <div style="text-align:center;padding:60px"><div class="spinner"></div></div>
+  </div>
+</div>
+{% endblock %}
+{% block extra_scripts %}
+<script>
+const AGENT_ID = {{ agent_id }};
+let agentData = null;
+
+async function loadAgent() {
+  agentData = await api(`/api/agents/${AGENT_ID}`).catch(()=>null);
+  if (!agentData) { document.getElementById('agent-content').innerHTML = '<div class="empty-state"><div class="empty-icon">❌</div><p>Agent non trouve.</p></div>'; return; }
+
+  const a = agentData;
+  document.getElementById('agent-title').textContent = `${a.avatar_emoji} ${a.name}`;
+  document.getElementById('agent-subtitle').textContent = `${a.service_label} • Voix: ${a.voice} • ${a.is_active ? 'Actif' : 'Inactif'}`;
+
+  const toggleBtn = document.getElementById('toggle-btn');
+  toggleBtn.textContent = a.is_active ? '⏸ Desactiver' : '▶ Activer';
+
+  // Stats
+  document.getElementById('agent-content').innerHTML = `
+    <div class="stats-grid" style="margin-bottom:20px">
+      <div class="stat-card jade"><div class="stat-label">Total appels</div><div class="stat-value">${a.total_calls}</div></div>
+      <div class="stat-card amber"><div class="stat-label">Leads crees</div><div class="stat-value">${a.total_leads}</div></div>
+      <div class="stat-card violet"><div class="stat-label">Transferts</div><div class="stat-value">${a.total_transfers}</div></div>
+      <div class="stat-card sky"><div class="stat-label">Conversion</div><div class="stat-value" style="font-size:20px">${a.conversion_rate}%</div></div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px">
+      <div class="card">
+        <div class="card-header"><span class="card-title">Configuration</span></div>
+        <div style="padding:14px;display:flex;flex-direction:column;gap:10px">
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:8px;background:var(--panel2);border-radius:6px">
+            <span style="font-size:12px;color:var(--text2)">Service</span>
+            <span class="badge badge-jade">${a.service_label}</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:8px;background:var(--panel2);border-radius:6px">
+            <span style="font-size:12px;color:var(--text2)">Voix TTS</span>
+            <span class="mono">${a.voice}</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:8px;background:var(--panel2);border-radius:6px">
+            <span style="font-size:12px;color:var(--text2)">Ton</span>
+            <span class="mono">${a.tone}</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:8px;background:var(--panel2);border-radius:6px">
+            <span style="font-size:12px;color:var(--text2)">Numero Ringover</span>
+            <span class="phone-num">${a.ringover_number || '— Non configure'}</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:8px;background:var(--panel2);border-radius:6px">
+            <span style="font-size:12px;color:var(--text2)">Numero transfert</span>
+            <span class="phone-num">${a.transfer_number || '— Non configure'}</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:8px;background:var(--panel2);border-radius:6px">
+            <span style="font-size:12px;color:var(--text2)">Seuil transfert</span>
+            <span class="badge badge-amber">${a.transfer_score}/100</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header"><span class="card-title">Intro agent</span></div>
+        <div style="padding:14px">
+          <div style="background:var(--panel2);border-radius:6px;padding:12px;font-size:12px;color:var(--text);line-height:1.6;font-family:var(--mono)">${a.script_intro || '— Aucune introduction definie'}</div>
+        </div>
+        <div class="card-header" style="border-top:1px solid var(--border)"><span class="card-title">Objectif & offre</span></div>
+        <div style="padding:14px">
+          <div style="background:var(--panel2);border-radius:6px;padding:12px;font-size:12px;color:var(--text2);line-height:1.6">${a.business_context || '— Non defini'}</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-header"><span class="card-title">Prompt systeme</span></div>
+      <div style="padding:14px">
+        <pre style="background:var(--panel2);border-radius:6px;padding:14px;font-size:11.5px;color:var(--text);line-height:1.8;overflow-x:auto;white-space:pre-wrap;font-family:var(--mono)">${a.system_prompt}</pre>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Derniers appels de cet agent</span>
+        <a href="/calls" class="btn btn-outline btn-xs">Voir tout →</a>
+      </div>
+      <div id="agent-calls">
+        <div style="text-align:center;padding:24px"><div class="spinner"></div></div>
+      </div>
+    </div>`;
+
+  loadAgentCalls();
+}
+
+async function loadAgentCalls() {
+  const calls = await api(`/api/calls?limit=10`).catch(()=>[]);
+  const filtered = calls.filter(c => c.agent_id === AGENT_ID);
+  const tbody = document.getElementById('agent-calls');
+  if (!filtered.length) {
+    tbody.innerHTML = '<div class="empty-state" style="padding:24px"><p>Aucun appel pour cet agent.</p></div>';
+    return;
+  }
+  tbody.innerHTML = `<div class="table-wrap"><table><thead><tr>
+    <th>Appelant</th><th>Statut</th><th>Duree</th><th>Score</th><th>Date</th>
+  </tr></thead><tbody>${filtered.map(c=>`<tr>
+    <td class="phone-num">${c.caller_number}</td>
+    <td>${badgeStatus(c.status)}</td>
+    <td class="mono">${fDur(c.duration)}</td>
+    <td>—</td>
+    <td style="font-size:11px;color:var(--text2)">${fDate(c.created_at)}</td>
+  </tr>`).join('')}</tbody></table></div>`;
+}
+
+async function toggleAgent() {
+  const r = await api(`/api/agents/${AGENT_ID}/toggle`, {method:'POST'});
+  toast(r.is_active ? 'Agent active' : 'Agent desactive', 'jade');
+  loadAgent();
+}
+
+function goToNewCampaign() {
+  window.location = `/campaigns?agent_id=${AGENT_ID}`;
+}
+
+loadAgent();
+</script>
+{% endblock %}

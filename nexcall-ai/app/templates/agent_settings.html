@@ -1,0 +1,197 @@
+{% extends "base.html" %}
+{% block title %}Parametres IA{% endblock %}
+{% block content %}
+<div class="topbar">
+  <div class="topbar-left"><h1>Parametres de l'agent IA</h1><p>Choisissez un agent, modifiez son script et definissez ses regles</p></div>
+  <div class="topbar-right">
+    <button class="btn btn-ghost btn-sm" onclick="testAgent()">🧪 Tester</button>
+    <button class="btn btn-jade btn-sm" id="save-btn" onclick="saveAgent()">💾 Enregistrer</button>
+  </div>
+</div>
+<div class="content">
+  <!-- Choix de l'agent -->
+  <div class="card" style="margin-bottom:16px">
+    <div class="card-header"><span class="card-title">1. Choisir l'agent IA</span></div>
+    <div style="padding:16px">
+      <div class="form-grid-2">
+        <div class="form-group" style="margin-bottom:14px">
+          <label class="form-label">Agent</label>
+          <select class="form-select" id="agent-select" onchange="loadAgent()"><option value="">Chargement...</option></select>
+        </div>
+        <div class="form-group" style="margin-bottom:14px">
+          <label class="form-label">Voix de l'agent</label>
+          <select class="form-select" id="a-voice">
+            <option value="nova">Nova (feminine, naturelle)</option>
+            <option value="shimmer">Shimmer (feminine, douce)</option>
+            <option value="alloy">Alloy (neutre)</option>
+            <option value="echo">Echo (masculine)</option>
+            <option value="fable">Fable (masculine, accent)</option>
+            <option value="onyx">Onyx (masculine, grave)</option>
+          </select>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+    <!-- Script -->
+    <div class="card">
+      <div class="card-header"><span class="card-title">2. Script de l'agent</span></div>
+      <div style="padding:16px">
+        <div class="alert alert-jade" style="font-size:11.5px">
+          Definissez le comportement de l'agent pour <strong>n'importe quelle offre</strong>.<br>
+          Exemple d'introduction : <em>"Bonjour, je suis votre conseiller. Je vous appelle au sujet de..."</em>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Phrase d'introduction</label>
+          <textarea class="form-textarea" id="a-intro" style="min-height:64px"
+            placeholder="Bonjour {prospect_name}, je suis {agent_name}, assistant IA. Je vous appelle au sujet de..."></textarea>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Objectif & offre a presenter</label>
+          <textarea class="form-textarea" id="a-objective" style="min-height:64px"
+            placeholder="Ex: presenter l'offre Mutuelle Senior, mettre en avant les garanties et le tarif..."></textarea>
+        </div>
+        <div class="form-group" style="margin-bottom:0">
+          <label class="form-label">Script systeme complet (comportement de l'IA)</label>
+          <textarea class="form-textarea" id="a-prompt" style="min-height:200px"></textarea>
+          <div class="form-hint">Decrit le role, le deroule de l'appel et l'offre. Variables : {agent_name}, {prospect_name}, {company_name}</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Regles -->
+    <div class="card">
+      <div class="card-header"><span class="card-title">3. Regles a respecter</span></div>
+      <div style="padding:16px">
+        <div class="alert alert-amber" style="font-size:11.5px">
+          Une regle par ligne. L'IA devra les suivre imperativement pendant l'appel.
+        </div>
+        <div class="form-group" style="margin-bottom:12px">
+          <label class="form-label">Regles de l'agent</label>
+          <textarea class="form-textarea" id="a-rules" style="min-height:200px"
+            placeholder="ne jamais sortir du script&#10;poser des questions pour comprendre le besoin&#10;proposer nos offres&#10;si le client demande un conseiller, transferer l'appel&#10;rester poli et professionnel&#10;ne jamais inventer une garantie"></textarea>
+        </div>
+        <button class="btn btn-outline btn-sm" onclick="loadDefaultRules()">↩ Inserer des regles type</button>
+        <div class="divider"></div>
+        <div class="form-group" style="margin-bottom:0">
+          <label class="form-label">Numero de transfert conseiller (cet agent)</label>
+          <input class="form-input" id="a-transfer" placeholder="+33XXXXXXXXX">
+          <div class="form-hint">Quand le client demande un conseiller, l'appel est transfere ici.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Resultat test -->
+  <div id="test-result" style="margin-top:16px;display:none"></div>
+</div>
+
+<!-- Modal test -->
+<div class="modal-overlay" id="test-modal">
+  <div class="modal-box">
+    <div class="modal-head"><span class="modal-title">🧪 Tester l'agent</span><button class="modal-close" onclick="document.getElementById('test-modal').classList.remove('open')">✕</button></div>
+    <div class="form-group"><label class="form-label">Nom du prospect (simulation)</label><input class="form-input" id="t-name" value="Madame Martin"></div>
+    <div class="form-group"><label class="form-label">Message du prospect</label>
+      <textarea class="form-textarea" id="t-msg" style="min-height:70px">Bonjour, oui j'ai resilie ma mutuelle le mois dernier car elle etait trop chere.</textarea></div>
+    <div id="t-output" style="display:none"></div>
+    <div class="modal-footer">
+      <button class="btn btn-jade" id="t-btn" onclick="runTest()">▶ Lancer le test</button>
+      <button class="btn btn-ghost" onclick="document.getElementById('test-modal').classList.remove('open')">Fermer</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block extra_scripts %}
+<script>
+let currentAgent = null;
+
+const DEFAULT_RULES = `ne jamais sortir du script
+poser des questions pour comprendre le besoin du client
+proposer nos offres adaptees
+si le client demande un conseiller, transferer l'appel
+rester poli, calme et professionnel
+ne jamais inventer une garantie ou un tarif
+toujours preciser que vous etes un assistant IA`;
+
+async function loadList(){
+  const agents = await api('/api/agents').catch(()=>[]);
+  const sel = document.getElementById('agent-select');
+  if(!agents.length){
+    sel.innerHTML = '<option value="">Aucun agent — creez-en un dans Agents IA</option>';
+    return;
+  }
+  sel.innerHTML = agents.map(a=>`<option value="${a.id}">${a.avatar_emoji} ${a.name} — ${a.service_label}</option>`).join('');
+  await loadAgent();
+}
+
+async function loadAgent(){
+  const id = document.getElementById('agent-select').value;
+  if(!id) return;
+  currentAgent = await api(`/api/agents/${id}`);
+  document.getElementById('a-voice').value   = currentAgent.voice || 'nova';
+  document.getElementById('a-intro').value   = currentAgent.script_intro || '';
+  document.getElementById('a-objective').value = currentAgent.business_context || '';
+  document.getElementById('a-prompt').value  = currentAgent.system_prompt || '';
+  document.getElementById('a-rules').value   = currentAgent.rules || '';
+  document.getElementById('a-transfer').value= currentAgent.transfer_number || '';
+}
+
+function loadDefaultRules(){
+  document.getElementById('a-rules').value = DEFAULT_RULES;
+  toast('Regles type inserees','jade');
+}
+
+async function saveAgent(){
+  if(!currentAgent){toast('Selectionnez un agent','amber');return;}
+  const btn = document.getElementById('save-btn'); btn.disabled = true;
+  try{
+    await api(`/api/agents/${currentAgent.id}`,{method:'PUT',body:JSON.stringify({
+      voice:           document.getElementById('a-voice').value,
+      script_intro:    document.getElementById('a-intro').value || null,
+      business_context: document.getElementById('a-objective').value || null,
+      system_prompt:   document.getElementById('a-prompt').value || null,
+      rules:           document.getElementById('a-rules').value || null,
+      transfer_number: document.getElementById('a-transfer').value || null,
+    })});
+    toast('Parametres enregistres','jade');
+    await loadAgent();
+  }catch(e){toast(e.message,'red');}
+  btn.disabled = false;
+}
+
+function testAgent(){
+  if(!currentAgent){toast('Selectionnez un agent','amber');return;}
+  document.getElementById('t-output').style.display='none';
+  document.getElementById('test-modal').classList.add('open');
+}
+
+async function runTest(){
+  // Sauvegarder d'abord pour tester la version courante
+  await saveAgent();
+  const btn = document.getElementById('t-btn'); btn.disabled=true; btn.innerHTML='<div class="spinner"></div>';
+  try{
+    const r = await api(`/api/agents/${currentAgent.id}/test`,{method:'POST',body:JSON.stringify({
+      message: document.getElementById('t-msg').value,
+      prospect_name: document.getElementById('t-name').value,
+    })});
+    const q = r.qualification || {};
+    const out = document.getElementById('t-output');
+    out.style.display='block';
+    out.className='alert alert-jade';
+    out.innerHTML = `<div style="line-height:1.8">
+      <div><strong>Reponse de l'agent :</strong> ${r.ai_response}</div>
+      ${q.intent?`<div><strong>Intention detectee :</strong> ${q.intent}</div>`:''}
+      ${q.lead_score!==undefined?`<div><strong>Score :</strong> ${q.lead_score}/100</div>`:''}
+      ${q.action?`<div><strong>Action :</strong> ${q.action}</div>`:''}
+    </div>`;
+    toast('Test effectue','jade');
+  }catch(e){
+    const out=document.getElementById('t-output');out.style.display='block';out.className='alert alert-red';out.textContent='Erreur : '+e.message;
+  }
+  btn.disabled=false;btn.innerHTML='▶ Lancer le test';
+}
+
+loadList();
+</script>
+{% endblock %}

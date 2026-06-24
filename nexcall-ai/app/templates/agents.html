@@ -1,0 +1,354 @@
+{% extends "base.html" %}
+{% block title %}Agents IA{% endblock %}
+{% block content %}
+<div class="topbar">
+  <div class="topbar-left"><h1>Agents IA</h1><p>Gestion de vos commerciaux virtuels</p></div>
+  <div class="topbar-right">
+    <button class="btn btn-ghost btn-sm" onclick="loadAgents()">↻</button>
+    <button class="btn btn-ghost btn-sm" onclick="seedAgents()">⚡ Init. agents par defaut</button>
+    <button class="btn btn-jade btn-sm" onclick="openCreate()">+ Nouvel agent</button>
+  </div>
+</div>
+<div class="content">
+  <div class="stats-grid" id="agents-stats"></div>
+
+  <!-- Grid agents -->
+  <div id="agents-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px"></div>
+</div>
+
+<!-- Modal Create/Edit -->
+<div class="modal-overlay" id="agent-modal">
+  <div class="modal-box wide">
+    <div class="modal-head">
+      <span class="modal-title" id="agent-modal-title">Nouvel Agent IA</span>
+      <button class="modal-close" onclick="closeModal('agent-modal')">✕</button>
+    </div>
+    <input type="hidden" id="a-id">
+    <div class="tab-nav">
+      <button class="tab-btn active" onclick="switchTab(this,'tab-identity')">Identite</button>
+      <button class="tab-btn" onclick="switchTab(this,'tab-prompt')">Prompt & Script</button>
+      <button class="tab-btn" onclick="switchTab(this,'tab-telephony')">Telephonie</button>
+    </div>
+
+    <!-- Tab Identite -->
+    <div class="tab-pane active" id="tab-identity">
+      <div class="form-grid-2">
+        <div class="form-group"><label class="form-label">Nom de l'agent *</label>
+          <input class="form-input" id="a-name" placeholder="Sophie"></div>
+        <div class="form-group"><label class="form-label">Service *</label>
+          <select class="form-select" id="a-service">
+            <option value="resiliation">📋 Resiliation</option>
+            <option value="relance_client">🔔 Relance Client</option>
+            <option value="commercial">💼 Commercial</option>
+            <option value="sondage">📊 Sondage</option>
+            <option value="prise_rdv">📅 Prise de RDV</option>
+            <option value="mutuelle_sante">💊 Mutuelle Sante</option>
+            <option value="assurance_auto">🚗 Assurance Auto</option>
+            <option value="assurance_habitation">🏠 Assurance Habitation</option>
+            <option value="assurance_prevoyance">🛡️ Assurance Prevoyance</option>
+            <option value="assurance_decennale">🏗️ Assurance Decennale</option>
+            <option value="assurance_moto">🏍️ Assurance Moto</option>
+            <option value="autre">🤖 Autre</option>
+          </select></div>
+      </div>
+      <div class="form-group"><label class="form-label">Description</label>
+        <textarea class="form-textarea" id="a-desc" style="min-height:60px" placeholder="Agent specialise en..."></textarea></div>
+      <div class="form-grid-3">
+        <div class="form-group"><label class="form-label">Voix TTS</label>
+          <select class="form-select" id="a-voice">
+            <option value="nova">Nova (Femme, naturelle)</option>
+            <option value="shimmer">Shimmer (Femme, douce)</option>
+            <option value="alloy">Alloy (Neutre)</option>
+            <option value="echo">Echo (Homme)</option>
+            <option value="fable">Fable (Homme, accent)</option>
+            <option value="onyx">Onyx (Homme, grave)</option>
+          </select></div>
+        <div class="form-group"><label class="form-label">Ton</label>
+          <select class="form-select" id="a-tone">
+            <option value="professionnel">Professionnel</option>
+            <option value="chaleureux">Chaleureux</option>
+            <option value="dynamique">Dynamique</option>
+            <option value="empathique">Empathique</option>
+          </select></div>
+        <div class="form-group"><label class="form-label">Langue</label>
+          <select class="form-select" id="a-lang">
+            <option value="fr">Francais</option>
+            <option value="en">English</option>
+            <option value="ar">Arabe</option>
+          </select></div>
+      </div>
+    </div>
+
+    <!-- Tab Prompt -->
+    <div class="tab-pane" id="tab-prompt">
+      <div class="alert alert-jade" style="font-size:11.5px">L'IA doit <strong>toujours se presenter comme une IA</strong> dans l'intro. Utilisez {prospect_name}, {agent_name}, {company_name} comme variables.</div>
+      <div class="form-group"><label class="form-label">Introduction obligatoire</label>
+        <textarea class="form-textarea" id="a-intro" style="min-height:70px" placeholder="Bonjour {prospect_name}, je suis {agent_name}, l'assistante IA de..."></textarea></div>
+      <div class="form-group"><label class="form-label">Script systeme de l'agent *</label>
+        <textarea class="form-textarea" id="a-prompt" style="min-height:180px"></textarea>
+        <div class="form-hint">Definit le comportement complet de l'agent.</div></div>
+      <div class="form-group"><label class="form-label">Objectif & offre a presenter</label>
+        <textarea class="form-textarea" id="a-context" style="min-height:60px" placeholder="Objectif de l'agent et offre a presenter (ex: proposer la Mutuelle Senior, mettre en avant le tarif et les garanties dentaire/optique...)"></textarea></div>
+      <div class="form-group"><label class="form-label">Regles a respecter (une par ligne)</label>
+        <textarea class="form-textarea" id="a-rules" style="min-height:90px" placeholder="ne jamais sortir du script&#10;poser des questions pour comprendre le besoin&#10;proposer nos offres&#10;si le client demande un conseiller, transferer l'appel"></textarea></div>
+    </div>
+
+    <!-- Tab Telephonie -->
+    <div class="tab-pane" id="tab-telephony">
+      <div class="form-grid-2">
+        <div class="form-group"><label class="form-label">Numero Ringover</label>
+          <input class="form-input" id="a-rnum" placeholder="+33XXXXXXXXX">
+          <div class="form-hint">Numero depuis lequel l'agent appelle</div></div>
+        <div class="form-group"><label class="form-label">Numero de transfert</label>
+          <input class="form-input" id="a-tnum" placeholder="+33XXXXXXXXX">
+          <div class="form-hint">Conseiller humain de secours</div></div>
+      </div>
+      <div class="form-group"><label class="form-label">Seuil de transfert (score)</label>
+        <input class="form-input" id="a-tscore" type="number" min="0" max="100" value="70">
+        <div class="form-hint">Score minimum pour transfert automatique vers conseiller</div></div>
+      <div class="form-group"><label class="form-label">Statut</label>
+        <select class="form-select" id="a-active">
+          <option value="true">✅ Actif</option>
+          <option value="false">⏸ Inactif</option>
+        </select></div>
+    </div>
+
+    <div class="modal-footer">
+      <button class="btn btn-jade" id="agent-save-btn" onclick="saveAgent()">Enregistrer</button>
+      <button class="btn btn-ghost" onclick="closeModal('agent-modal')">Annuler</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Test Agent -->
+<div class="modal-overlay" id="test-modal">
+  <div class="modal-box">
+    <div class="modal-head">
+      <span class="modal-title">🧪 Tester l'agent <span id="test-agent-name"></span></span>
+      <button class="modal-close" onclick="closeModal('test-modal')">✕</button>
+    </div>
+    <div class="form-group"><label class="form-label">Nom du prospect simulé</label>
+      <input class="form-input" id="test-prospect" value="Jean Dupont"></div>
+    <div class="form-group"><label class="form-label">Message du prospect</label>
+      <textarea class="form-textarea" id="test-msg" style="min-height:80px">Bonjour, je cherche une meilleure couverture sante pour ma famille. Mon budget est d'environ 150 euros par mois.</textarea></div>
+    <div id="test-result" style="display:none"></div>
+    <div class="modal-footer">
+      <button class="btn btn-jade" id="test-btn" onclick="runTest()">▶ Tester maintenant</button>
+      <button class="btn btn-ghost" onclick="closeModal('test-modal')">Fermer</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block extra_scripts %}
+<script>
+let currentTestAgentId = null;
+
+function switchTab(btn, tabId) {
+  document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
+  document.querySelectorAll('.tab-pane').forEach(p=>p.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById(tabId).classList.add('active');
+}
+
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+function agentCardColor(service) {
+  const m = { mutuelle_sante:'var(--jade)', assurance_auto:'var(--blue)', assurance_habitation:'var(--amber)',
+    assurance_prevoyance:'var(--violet)', assurance_decennale:'var(--sky)', assurance_moto:'var(--red)' };
+  return m[service] || 'var(--text2)';
+}
+
+function agentCard(a) {
+  const color = agentCardColor(a.service);
+  const statusBadge = a.is_active
+    ? '<span class="badge badge-jade">✓ Actif</span>'
+    : '<span class="badge badge-gray">⏸ Inactif</span>';
+  return `
+  <div class="agent-card ${!a.is_active?'inactive':''}" onclick="window.location='/agents/${a.id}'">
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:12px">
+      <div style="display:flex;align-items:center;gap:10px">
+        <div class="agent-avatar" style="background:${color}22;border:1.5px solid ${color}44">
+          <span>${a.avatar_emoji}</span>
+        </div>
+        <div>
+          <div class="agent-name">${a.name}</div>
+          <div class="agent-service">${a.service_label}</div>
+        </div>
+      </div>
+      ${statusBadge}
+    </div>
+    ${a.description ? `<div style="font-size:12px;color:var(--text2);margin-bottom:12px;line-height:1.5">${a.description.substring(0,80)}...</div>` : ''}
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;border-top:1px solid var(--border);padding-top:12px">
+      <div style="text-align:center">
+        <div style="font-family:var(--mono);font-size:18px;color:${color};font-weight:500">${a.total_calls}</div>
+        <div style="font-size:9px;color:var(--text2);text-transform:uppercase;letter-spacing:.6px">Appels</div>
+      </div>
+      <div style="text-align:center">
+        <div style="font-family:var(--mono);font-size:18px;color:var(--amber);font-weight:500">${a.total_leads}</div>
+        <div style="font-size:9px;color:var(--text2);text-transform:uppercase;letter-spacing:.6px">Leads</div>
+      </div>
+      <div style="text-align:center">
+        <div style="font-family:var(--mono);font-size:18px;color:var(--sky);font-weight:500">${a.conversion_rate}%</div>
+        <div style="font-size:9px;color:var(--text2);text-transform:uppercase;letter-spacing:.6px">Conversion</div>
+      </div>
+    </div>
+    <div style="display:flex;gap:6px;margin-top:10px" onclick="event.stopPropagation()">
+      <button class="btn btn-outline btn-xs" onclick="editAgent(${a.id})">✎ Modifier</button>
+      <button class="btn btn-ghost btn-xs" onclick="openTest(${a.id},'${a.name}')">🧪 Tester</button>
+      <button class="btn btn-ghost btn-xs" onclick="toggleAgent(${a.id},${a.is_active})">${a.is_active?'⏸':'▶'}</button>
+    </div>
+  </div>`;
+}
+
+async function loadAgents() {
+  const [agents, stats] = await Promise.all([
+    api('/api/agents').catch(()=>[]),
+    api('/api/agents/stats').catch(()=>({})),
+  ]);
+
+  document.getElementById('agents-stats').innerHTML = `
+    <div class="stat-card jade"><div class="stat-label">Total agents</div><div class="stat-value">${stats.total||0}</div><div class="stat-sub">Crees</div></div>
+    <div class="stat-card jade"><div class="stat-label">Actifs</div><div class="stat-value">${stats.active||0}</div><div class="stat-sub">Operationnels</div></div>
+    <div class="stat-card amber"><div class="stat-label">Inactifs</div><div class="stat-value">${stats.inactive||0}</div><div class="stat-sub">Pauses</div></div>`;
+
+  const grid = document.getElementById('agents-grid');
+  if (!agents.length) {
+    grid.innerHTML = `<div style="grid-column:1/-1"><div class="empty-state"><div class="empty-icon">🤖</div><p>Aucun agent cree. Cliquez sur "Init. agents par defaut" pour creer les 6 agents.</p></div></div>`;
+    return;
+  }
+  grid.innerHTML = agents.map(agentCard).join('');
+}
+
+function openCreate() {
+  document.getElementById('agent-modal-title').textContent = 'Nouvel Agent IA';
+  document.getElementById('a-id').value = '';
+  document.getElementById('a-active').value = 'true';
+  ['a-name','a-desc','a-intro','a-prompt','a-context','a-rules','a-rnum','a-tnum'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('a-tscore').value = '70';
+  document.getElementById('a-service').value = 'resiliation';
+  document.getElementById('a-voice').value = 'nova';
+  document.getElementById('a-tone').value = 'professionnel';
+  document.getElementById('a-lang').value = 'fr';
+  document.getElementById('agent-modal').classList.add('open');
+}
+
+async function editAgent(id) {
+  const a = await api(`/api/agents/${id}`);
+  document.getElementById('agent-modal-title').textContent = 'Modifier Agent';
+  document.getElementById('a-id').value         = id;
+  document.getElementById('a-name').value       = a.name || '';
+  document.getElementById('a-service').value    = a.service || 'autre';
+  document.getElementById('a-desc').value       = a.description || '';
+  document.getElementById('a-voice').value      = a.voice || 'nova';
+  document.getElementById('a-tone').value       = a.tone || 'professionnel';
+  document.getElementById('a-lang').value       = a.language || 'fr';
+  document.getElementById('a-intro').value      = a.script_intro || '';
+  document.getElementById('a-prompt').value     = a.system_prompt || '';
+  document.getElementById('a-context').value    = a.business_context || '';
+  document.getElementById('a-rules').value      = a.rules || '';
+  document.getElementById('a-rnum').value       = a.ringover_number || '';
+  document.getElementById('a-tnum').value       = a.transfer_number || '';
+  document.getElementById('a-tscore').value     = a.transfer_score || 70;
+  document.getElementById('a-active').value     = String(a.is_active);
+  document.getElementById('agent-modal').classList.add('open');
+}
+
+async function saveAgent() {
+  const id = document.getElementById('a-id').value;
+  const name = document.getElementById('a-name').value.trim();
+  if (!name) { toast('Le nom est requis', 'amber'); return; }
+  const prompt = document.getElementById('a-prompt').value.trim();
+  if (!prompt) { toast('Le prompt systeme est requis', 'amber'); return; }
+
+  const payload = {
+    name, service: document.getElementById('a-service').value,
+    description: document.getElementById('a-desc').value || null,
+    system_prompt: prompt,
+    script_intro: document.getElementById('a-intro').value || null,
+    business_context: document.getElementById('a-context').value || null,
+    rules: document.getElementById('a-rules').value || null,
+    voice: document.getElementById('a-voice').value,
+    tone: document.getElementById('a-tone').value,
+    language: document.getElementById('a-lang').value,
+    ringover_number: document.getElementById('a-rnum').value || null,
+    transfer_number: document.getElementById('a-tnum').value || null,
+    transfer_score: parseInt(document.getElementById('a-tscore').value) || 70,
+    is_active: document.getElementById('a-active').value === 'true',
+  };
+
+  const btn = document.getElementById('agent-save-btn');
+  btn.disabled = true;
+  try {
+    if (id) {
+      await api(`/api/agents/${id}`, {method:'PUT', body:JSON.stringify(payload)});
+      toast('Agent mis a jour !', 'jade');
+    } else {
+      await api('/api/agents', {method:'POST', body:JSON.stringify(payload)});
+      toast('Agent cree !', 'jade');
+    }
+    closeModal('agent-modal');
+    loadAgents();
+  } catch(e) { toast(e.message, 'red'); }
+  btn.disabled = false;
+}
+
+async function toggleAgent(id, current) {
+  await api(`/api/agents/${id}/toggle`, {method:'POST'});
+  toast(current ? 'Agent desactive' : 'Agent active', 'jade');
+  loadAgents();
+}
+
+function openTest(id, name) {
+  currentTestAgentId = id;
+  document.getElementById('test-agent-name').textContent = name;
+  document.getElementById('test-result').style.display = 'none';
+  document.getElementById('test-modal').classList.add('open');
+}
+
+async function runTest() {
+  const btn = document.getElementById('test-btn');
+  const rd = document.getElementById('test-result');
+  btn.disabled = true; btn.innerHTML = '<div class="spinner"></div>';
+  try {
+    const r = await api(`/api/agents/${currentTestAgentId}/test`, {
+      method: 'POST',
+      body: JSON.stringify({
+        message: document.getElementById('test-msg').value,
+        prospect_name: document.getElementById('test-prospect').value,
+      })
+    });
+    rd.style.display = 'block';
+    const qual = r.qualification || {};
+    rd.innerHTML = `
+      <div class="alert alert-jade" style="margin-bottom:10px">
+        <div><strong>✓ Test reussi</strong>
+        <div style="margin-top:8px;font-size:12px;line-height:1.8">
+          <div><b>Reponse IA :</b> ${r.ai_response}</div>
+          ${qual.intent ? `<div><b>Intent :</b> ${qual.intent}</div>` : ''}
+          ${qual.lead_score !== undefined ? `<div><b>Score :</b> ${qual.lead_score}/100</div>` : ''}
+          ${qual.need_summary ? `<div><b>Besoin :</b> ${qual.need_summary}</div>` : ''}
+          ${qual.action ? `<div><b>Action :</b> ${qual.action}</div>` : ''}
+        </div></div>
+      </div>`;
+    toast('Test reussi !', 'jade');
+  } catch(e) {
+    rd.style.display = 'block';
+    rd.className = 'alert alert-red';
+    rd.textContent = `Erreur : ${e.message}`;
+    toast(e.message, 'red');
+  }
+  btn.disabled = false; btn.innerHTML = '▶ Tester maintenant';
+}
+
+async function seedAgents() {
+  if (!confirm('Creer les 6 agents IA par defaut ? (uniquement si aucun agent existe)')) return;
+  try {
+    const r = await api('/api/agents/seed', {method:'POST'});
+    toast(r.message, 'jade');
+    loadAgents();
+  } catch(e) { toast(e.message, 'red'); }
+}
+
+loadAgents();
+</script>
+{% endblock %}

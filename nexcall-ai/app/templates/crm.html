@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% block title %}CRM Pipeline{% endblock %}
+{% block content %}
+<div class="topbar">
+  <div class="topbar-left"><h1>CRM Pipeline</h1><p>Suivi commercial des leads</p></div>
+  <div class="topbar-right"><button class="btn btn-ghost btn-sm" onclick="loadPipeline()">↻ Actualiser</button></div>
+</div>
+<div class="content">
+  <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:12px" id="pipeline-grid">
+    <div style="text-align:center;padding:40px;grid-column:1/-1"><div class="spinner"></div></div>
+  </div>
+</div>
+
+<!-- Modal Lead Detail -->
+<div class="modal-overlay" id="lead-detail-modal">
+  <div class="modal-box">
+    <div class="modal-head"><span class="modal-title">Detail Lead</span><button class="modal-close" onclick="closeModal('lead-detail-modal')">✕</button></div>
+    <div id="lead-detail-content"></div>
+  </div>
+</div>
+{% endblock %}
+{% block extra_scripts %}
+<script>
+const STAGES = [
+  {key:'new',       label:'Nouveau lead',  color:'var(--sky)'},
+  {key:'contacted', label:'Appele',         color:'var(--blue)'},
+  {key:'qualified', label:'Interesse',      color:'var(--jade)'},
+  {key:'warm',      label:'Rappel',         color:'var(--amber)'},
+  {key:'hot',       label:'Rendez-vous',    color:'var(--violet)'},
+  {key:'converted', label:'Converti',       color:'#22C55E'},
+];
+
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+function leadCard(l) {
+  return `
+  <div class="crm-card" onclick="showLeadDetail(${l.id})">
+    <div class="crm-card-name">${l.full_name}</div>
+    <div class="crm-card-meta">
+      <span class="phone-num" style="font-size:10px">${l.phone}</span>
+    </div>
+    <div style="margin-top:6px;display:flex;justify-content:space-between;align-items:center">
+      <span style="font-size:10.5px;color:var(--text2)">${l.interest ? l.interest.replace(/_/g,' ') : '—'}</span>
+      ${fScore(l.score)}
+    </div>
+  </div>`;
+}
+
+async function loadPipeline() {
+  const leads = await api('/api/leads?limit=300').catch(()=>[]);
+
+  const grid = document.getElementById('pipeline-grid');
+  grid.innerHTML = STAGES.map(stage => {
+    const stageLeads = leads.filter(l => l.status === stage.key);
+    return `
+    <div class="pipeline-col">
+      <div class="pipeline-header" style="border-top:3px solid ${stage.color}">
+        <span>${stage.label}</span>
+        <span class="badge badge-gray">${stageLeads.length}</span>
+      </div>
+      <div class="pipeline-body">
+        ${stageLeads.length ? stageLeads.map(leadCard).join('') : '<div style="text-align:center;padding:20px;color:var(--text3);font-size:11px">Vide</div>'}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+window.leadsCache = [];
+async function showLeadDetail(id) {
+  const l = await api(`/api/leads/${id}`);
+  document.getElementById('lead-detail-content').innerHTML = `
+    <div style="margin-bottom:16px">
+      <div style="font-size:18px;font-weight:700;color:var(--text)">${l.full_name}</div>
+      <div class="phone-num" style="margin-top:2px">${l.phone}</div>
+    </div>
+    <div class="form-grid-2" style="margin-bottom:16px">
+      <div><div class="form-label">Statut</div>${badgeLead(l.status)}</div>
+      <div><div class="form-label">Score</div>${fScore(l.score)}</div>
+      <div><div class="form-label">Interet</div><span style="font-size:12px">${l.interest||'—'}</span></div>
+      <div><div class="form-label">Budget</div><span style="font-size:12px">${l.budget||'—'}</span></div>
+    </div>
+    ${l.notes ? `<div class="form-group"><div class="form-label">Notes</div>
+      <div style="background:var(--panel2);border-radius:6px;padding:10px;font-size:12px;white-space:pre-wrap;max-height:150px;overflow-y:auto">${l.notes}</div></div>` : ''}
+    <div class="modal-footer">
+      <select class="form-select" id="move-status" style="flex:1">
+        ${STAGES.map(s=>`<option value="${s.key}" ${s.key===l.status?'selected':''}>${s.label}</option>`).join('')}
+      </select>
+      <button class="btn btn-jade" onclick="moveLead(${l.id})">Deplacer</button>
+    </div>`;
+  document.getElementById('lead-detail-modal').classList.add('open');
+}
+
+async function moveLead(id) {
+  const newStatus = document.getElementById('move-status').value;
+  await api(`/api/leads/${id}`, {method:'PUT', body: JSON.stringify({status: newStatus})});
+  toast('Lead deplace !', 'jade');
+  closeModal('lead-detail-modal');
+  loadPipeline();
+}
+
+loadPipeline();
+</script>
+{% endblock %}

@@ -1,0 +1,270 @@
+{% extends "base.html" %}
+{% block title %}Configuration{% endblock %}
+
+{% block content %}
+<div class="topbar">
+  <div class="topbar-left">
+    <h1>Configuration</h1>
+    <p>Paramètres système et intégrations</p>
+  </div>
+  <div class="topbar-right">
+    <button class="btn btn-ghost btn-sm" onclick="loadStatus()">↻ Vérifier</button>
+    <button class="btn btn-jade" onclick="saveAll()" id="save-btn">💾 Sauvegarder</button>
+  </div>
+</div>
+
+<div class="content">
+
+  <!-- Integration status cards -->
+  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:26px" id="status-cards">
+    <div class="stat-card jade"><div class="stat-label">Ringover</div><div style="margin-top:6px"><div class="spinner"></div></div></div>
+    <div class="stat-card jade"><div class="stat-label">OpenAI</div><div style="margin-top:6px"><div class="spinner"></div></div></div>
+    <div class="stat-card jade"><div class="stat-label">Agent IA</div><div style="margin-top:6px"><div class="spinner"></div></div></div>
+  </div>
+
+  <div id="global-alert"></div>
+
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
+
+    <!-- Ringover -->
+    <div class="section-panel">
+      <div class="section-panel-title">
+        <div class="section-title-dot"></div>
+        Ringover — Téléphonie
+      </div>
+      <div class="form-group">
+        <label class="form-label">Clé API Ringover</label>
+        <input class="form-input" type="password" id="cfg-ringover_api_key" placeholder="Votre clé API Ringover">
+        <div class="form-hint">Espace Ringover → Paramètres → API → Clé API</div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Numéro de réception</label>
+        <input class="form-input" id="cfg-ringover_phone" placeholder="+33XXXXXXXXX">
+        <div class="form-hint">Numéro qui recevra les appels entrants</div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Numéro de transfert agent</label>
+        <input class="form-input" id="cfg-ringover_transfer" placeholder="+33XXXXXXXXX">
+        <div class="form-hint">Vers ce numéro lors du transfert vers humain</div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Secret webhook</label>
+        <input class="form-input" type="password" id="cfg-webhook_secret" placeholder="Secret HMAC pour valider les webhooks">
+      </div>
+      <button class="btn btn-outline btn-sm" onclick="testRingover()">⚡ Tester la connexion</button>
+    </div>
+
+    <!-- OpenAI -->
+    <div class="section-panel">
+      <div class="section-panel-title">
+        <div class="section-title-dot" style="background:var(--violet)"></div>
+        OpenAI — Intelligence Artificielle
+      </div>
+      <div class="form-group">
+        <label class="form-label">Clé API OpenAI</label>
+        <input class="form-input" type="password" id="cfg-openai_api_key" placeholder="sk-...">
+        <div class="form-hint">platform.openai.com → API Keys</div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Modèle de chat</label>
+        <select class="form-select" id="cfg-openai_model">
+          <option value="gpt-4o">GPT-4o — Recommandé</option>
+          <option value="gpt-4o-mini">GPT-4o Mini — Économique</option>
+          <option value="gpt-4-turbo">GPT-4 Turbo</option>
+          <option value="gpt-3.5-turbo">GPT-3.5 Turbo — Basique</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Voix Text-to-Speech</label>
+        <select class="form-select" id="cfg-tts_voice">
+          <option value="nova">Nova — Femme, naturelle (recommandée)</option>
+          <option value="shimmer">Shimmer — Femme, douce</option>
+          <option value="alloy">Alloy — Neutre</option>
+          <option value="echo">Echo — Homme</option>
+          <option value="fable">Fable — Homme, accentué</option>
+          <option value="onyx">Onyx — Homme, profond</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Agent IA -->
+    <div class="section-panel">
+      <div class="section-panel-title">
+        <div class="section-title-dot" style="background:var(--amber)"></div>
+        Agent IA — Personnalité
+      </div>
+      <div class="form-grid-2">
+        <div class="form-group">
+          <label class="form-label">Nom de l'agent</label>
+          <input class="form-input" id="cfg-agent_name" placeholder="Sophie">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Nom de l'entreprise</label>
+          <input class="form-input" id="cfg-company_name" placeholder="AssurancePro">
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Langue</label>
+        <select class="form-select" id="cfg-language">
+          <option value="fr">Français</option>
+          <option value="en">English</option>
+          <option value="es">Español</option>
+          <option value="de">Deutsch</option>
+          <option value="ar">العربية</option>
+          <option value="pt">Português</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Seuil de transfert (score lead)</label>
+        <input class="form-input" id="cfg-lead_score_threshold" type="number" min="0" max="100" placeholder="70">
+        <div class="form-hint">Si le score du lead ≥ à cette valeur, l'IA propose le transfert</div>
+      </div>
+    </div>
+
+    <!-- Webhooks -->
+    <div class="section-panel">
+      <div class="section-panel-title">
+        <div class="section-title-dot" style="background:var(--sky)"></div>
+        Webhooks Ringover
+      </div>
+      <div class="alert alert-jade" style="margin-bottom:16px;font-size:11.5px">
+        Configurez ces URLs dans votre espace Ringover → Paramètres → Webhooks
+      </div>
+      <div id="webhook-list" style="display:flex;flex-direction:column;gap:8px;margin-bottom:16px"></div>
+      <div class="alert alert-amber" style="font-size:11.5px">
+        💡 Pour tester localement, utilisez <code style="font-family:var(--font-mono);background:rgba(0,0,0,.3);padding:1px 5px;border-radius:3px">ngrok http 8000</code>
+        et remplacez l'IP par l'URL HTTPS de ngrok.
+      </div>
+    </div>
+
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+async function loadStatus() {
+  try {
+    const st = await api('/api/config/status');
+    renderStatus(st);
+  } catch(e) { console.error(e); }
+}
+
+function renderStatus(st) {
+  try {
+    const cards = document.getElementById('status-cards');
+
+    const ro = st.ringover, oa = st.openai, ag = st.agent;
+
+    cards.innerHTML = `
+      <div class="stat-card ${ro.connected ? 'jade' : ro.configured ? 'amber' : 'crimson'}">
+        <div class="stat-label">Ringover</div>
+        <div style="margin-top:8px;font-size:13px;font-weight:600;color:${ro.connected ? 'var(--jade)' : ro.configured ? 'var(--amber)' : 'var(--crimson)'}">
+          ${ro.connected ? '✓ Connecté' : ro.configured ? '⚠ Non joignable' : '✕ Non configuré'}
+        </div>
+        <div style="font-size:11px;color:var(--text3);margin-top:4px;font-family:var(--font-mono)">
+          ${ro.phone_number || '— Aucun numéro —'}
+        </div>
+      </div>
+      <div class="stat-card ${oa.configured ? 'jade' : 'crimson'}">
+        <div class="stat-label">OpenAI</div>
+        <div style="margin-top:8px;font-size:13px;font-weight:600;color:${oa.configured ? 'var(--jade)' : 'var(--crimson)'}">
+          ${oa.configured ? '✓ Configuré' : '✕ Non configuré'}
+        </div>
+        <div style="font-size:11px;color:var(--text3);margin-top:4px;font-family:var(--font-mono)">
+          ${oa.model} · voix ${oa.tts_voice}
+        </div>
+      </div>
+      <div class="stat-card sky">
+        <div class="stat-label">Agent IA</div>
+        <div style="margin-top:8px;font-size:14px;font-weight:700;color:var(--sky)">${ag.name}</div>
+        <div style="font-size:11px;color:var(--text3);margin-top:4px;font-family:var(--font-mono)">
+          ${ag.company} · ${ag.language}
+        </div>
+      </div>
+    `;
+  } catch(e) { console.error(e); }
+
+  loadWebhooks();
+}
+
+async function loadWebhooks() {
+  try {
+    const wh = await api('/api/config/webhook-urls');
+    const whList = document.getElementById('webhook-list');
+    const whEvents = [
+      { label: 'Appel entrant',  url: wh.incoming },
+      { label: 'Touche DTMF',   url: wh.dtmf },
+      { label: 'Parole client',  url: wh.speech },
+      { label: 'Statut appel',  url: wh.status },
+      { label: 'Fin d\'appel',  url: wh.hangup },
+    ];
+    whList.innerHTML = whEvents.map(e => `
+      <div style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:var(--panel2);border:1px solid var(--border);border-radius:5px">
+        <span style="font-size:10px;color:var(--text3);min-width:95px;font-weight:600;text-transform:uppercase;letter-spacing:.5px">${e.label}</span>
+        <code style="font-family:var(--font-mono);font-size:11px;color:var(--jade);word-break:break-all">${e.url}</code>
+        <button class="btn btn-ghost btn-xs" style="margin-left:auto;flex-shrink:0" onclick="navigator.clipboard.writeText('${e.url}').then(()=>toast('Copié !','jade'))">⎘</button>
+      </div>
+    `).join('');
+
+  } catch(e) { console.error(e); }
+}
+
+async function testRingover() {
+  try {
+    const r = await api('/api/config/test-ringover', { method: 'POST' });
+    if (r.connected) {
+      toast('✓ Ringover connecté avec succès !', 'jade');
+    } else {
+      toast(`✕ Erreur : ${r.error}`, 'crimson');
+    }
+  } catch(e) { toast(e.message, 'crimson'); }
+}
+
+async function saveAll() {
+  const fields = {
+    ringover_api_key:       document.getElementById('cfg-ringover_api_key').value,
+    ringover_phone:         document.getElementById('cfg-ringover_phone').value,
+    ringover_transfer:      document.getElementById('cfg-ringover_transfer').value,
+    webhook_secret:         document.getElementById('cfg-webhook_secret').value,
+    openai_api_key:         document.getElementById('cfg-openai_api_key').value,
+    openai_model:           document.getElementById('cfg-openai_model').value,
+    tts_voice:              document.getElementById('cfg-tts_voice').value,
+    agent_name:             document.getElementById('cfg-agent_name').value,
+    company_name:           document.getElementById('cfg-company_name').value,
+    language:               document.getElementById('cfg-language').value,
+    lead_score_threshold:   document.getElementById('cfg-lead_score_threshold').value,
+  };
+
+  // Filtrer les champs vides
+  const configs = Object.fromEntries(Object.entries(fields).filter(([,v]) => v));
+
+  const btn = document.getElementById('save-btn');
+  btn.disabled = true;
+  try {
+    const res = await api('/api/config', { method: 'POST', body: JSON.stringify({ configs }) });
+    toast('✓ Configuration sauvegardée et appliquée !', 'jade');
+    // Le backend renvoie le statut recalculé : on l'affiche immédiatement.
+    if (res && res.status) {
+      renderStatus(res.status);
+    } else {
+      loadStatus();
+    }
+  } catch(e) { toast(e.message, 'crimson'); }
+  btn.disabled = false;
+}
+
+// Pré-remplissage depuis les valeurs par défaut
+function prefill() {
+  document.getElementById('cfg-agent_name').value   = 'Sophie';
+  document.getElementById('cfg-company_name').value = 'AssurancePro';
+  document.getElementById('cfg-openai_model').value = 'gpt-4o';
+  document.getElementById('cfg-tts_voice').value    = 'nova';
+  document.getElementById('cfg-language').value     = 'fr';
+  document.getElementById('cfg-lead_score_threshold').value = '70';
+}
+
+prefill();
+loadStatus();
+</script>
+{% endblock %}

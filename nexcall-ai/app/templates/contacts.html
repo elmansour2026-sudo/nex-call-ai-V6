@@ -1,0 +1,327 @@
+{% extends "base.html" %}
+{% block title %}Contacts{% endblock %}
+{% block content %}
+<div class="topbar">
+  <div class="topbar-left"><h1>Contacts</h1><p>Liste des contacts a appeler</p></div>
+  <div class="topbar-right">
+    <button class="btn btn-ghost btn-sm" onclick="exportContacts()">⬇ Export CSV</button>
+    <button class="btn btn-ghost btn-sm" onclick="openImport()">📥 Importer</button>
+    <button class="btn btn-jade btn-sm" onclick="openCreate()">+ Nouveau contact</button>
+  </div>
+</div>
+<div class="content">
+  <div class="stats-grid" id="contacts-stats"></div>
+
+  <!-- Filtres -->
+  <div class="card" style="margin-bottom:16px">
+    <div style="padding:12px 14px;display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+      <input class="form-input" id="f-search" placeholder="🔍 Rechercher nom, telephone, offre..." style="flex:1;min-width:200px" oninput="debounceSearch()">
+      <select class="form-select" id="f-status" style="width:170px" onchange="loadContacts()">
+        <option value="">Tous statuts</option>
+        <option value="nouveau">Nouveau</option>
+        <option value="en_attente">En attente</option>
+        <option value="appele">Appele</option>
+        <option value="interesse">Interesse</option>
+        <option value="pas_interesse">Pas interesse</option>
+        <option value="ne_repond_pas">Ne repond pas</option>
+        <option value="a_rappeler">A rappeler</option>
+        <option value="transfere_conseiller">Transfere conseiller</option>
+        <option value="refus_definitif">Refus definitif</option>
+        <option value="do_not_call">Do not call</option>
+      </select>
+      <select class="form-select" id="f-campaign" style="width:170px" onchange="loadContacts()">
+        <option value="">Toutes campagnes</option>
+      </select>
+      <select class="form-select" id="f-agent" style="width:160px" onchange="loadContacts()">
+        <option value="">Tous agents</option>
+      </select>
+      <button class="btn btn-ghost btn-sm" onclick="resetFilters()">↺ Reset</button>
+    </div>
+  </div>
+
+  <!-- Table -->
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">Liste des contacts</span>
+      <span id="contacts-count" style="font-size:11px;color:var(--text2);font-family:var(--mono)"></span>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th>#</th><th>Contact</th><th>Telephone</th><th>Ville</th>
+          <th>Informations</th><th>Statut</th><th>Dernier appel</th><th>Tent.</th><th>Actions</th>
+        </tr></thead>
+        <tbody id="contacts-tbody"><tr><td colspan="9" style="text-align:center;padding:32px"><div class="spinner"></div></td></tr></tbody>
+      </table>
+    </div>
+    <div style="padding:12px 16px;display:flex;justify-content:space-between;align-items:center;border-top:1px solid var(--border)">
+      <span id="page-info" style="font-size:12px;color:var(--text2)"></span>
+      <div style="display:flex;gap:6px">
+        <button class="btn btn-ghost btn-sm" id="prev-btn" onclick="changePage(-1)">← Precedent</button>
+        <button class="btn btn-ghost btn-sm" id="next-btn" onclick="changePage(1)">Suivant →</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Create/Edit -->
+<div class="modal-overlay" id="contact-modal">
+  <div class="modal-box wide">
+    <div class="modal-head"><span class="modal-title" id="contact-modal-title">Nouveau contact</span><button class="modal-close" onclick="closeModal('contact-modal')">✕</button></div>
+    <input type="hidden" id="c-id">
+    <div class="form-grid-2">
+      <div class="form-group"><label class="form-label">Prenom</label><input class="form-input" id="c-fname"></div>
+      <div class="form-group"><label class="form-label">Nom</label><input class="form-input" id="c-lname"></div>
+    </div>
+    <div class="form-grid-2">
+      <div class="form-group"><label class="form-label">Telephone *</label><input class="form-input" id="c-phone" placeholder="+33612345678"></div>
+      <div class="form-group"><label class="form-label">Date de naissance</label><input class="form-input" id="c-birth" placeholder="JJ/MM/AAAA"></div>
+    </div>
+    <div class="form-grid-2">
+      <div class="form-group"><label class="form-label">Ville</label><input class="form-input" id="c-city" placeholder="ex: Paris"></div>
+      <div class="form-group"><label class="form-label">Informations</label><input class="form-input" id="c-info" placeholder="Note libre sur le contact"></div>
+    </div>
+    <div class="form-group"><label class="form-label">Notes</label><textarea class="form-textarea" id="c-notes" style="min-height:60px"></textarea></div>
+    <div class="form-grid-2" id="status-row" style="display:none">
+      <div class="form-group"><label class="form-label">Statut</label>
+        <select class="form-select" id="c-status">
+          <option value="nouveau">Nouveau</option><option value="en_attente">En attente</option>
+          <option value="appele">Appele</option><option value="interesse">Interesse</option>
+          <option value="pas_interesse">Pas interesse</option><option value="ne_repond_pas">Ne repond pas</option>
+          <option value="a_rappeler">A rappeler</option><option value="transfere_conseiller">Transfere conseiller</option>
+          <option value="refus_definitif">Refus definitif</option><option value="do_not_call">Do not call</option>
+        </select></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-jade" id="contact-save-btn" onclick="saveContact()">Enregistrer</button>
+      <button class="btn btn-ghost" onclick="closeModal('contact-modal')">Annuler</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Import -->
+<div class="modal-overlay" id="import-modal">
+  <div class="modal-box">
+    <div class="modal-head"><span class="modal-title">📥 Importer des contacts</span><button class="modal-close" onclick="closeModal('import-modal')">✕</button></div>
+
+    <div class="form-group"><label class="form-label">Campagne (optionnel)</label>
+      <select class="form-select" id="import-campaign"><option value="">Aucune</option></select></div>
+    <div class="form-group"><label class="form-label">Agent IA (optionnel)</label>
+      <select class="form-select" id="import-agent"><option value="">Aucun</option></select></div>
+
+    <div class="tab-nav">
+      <button class="tab-btn active" onclick="switchImportTab(this,'tab-csv')">Fichier CSV</button>
+      <button class="tab-btn" onclick="switchImportTab(this,'tab-paste')">Coller des numeros</button>
+    </div>
+
+    <!-- Onglet CSV -->
+    <div class="tab-pane active" id="tab-csv">
+      <div class="alert alert-jade" style="font-size:11.5px">
+        Seul le <strong>telephone</strong> est obligatoire. Le nom et la date de naissance sont facultatifs.<br>
+        Colonnes reconnues : <code>telephone, nom, prenom, date_naissance, date_resiliation, ancienne_offre, informations_client</code>
+      </div>
+      <div class="upload-zone" id="upload-zone" onclick="document.getElementById('csv-file').click()">
+        <div style="font-size:30px;margin-bottom:6px">📄</div>
+        <div style="font-weight:600">Choisir un fichier CSV</div>
+        <div style="font-size:11px;color:var(--text2);margin-top:3px">ou glissez-deposez</div>
+        <input type="file" id="csv-file" accept=".csv,.txt" onchange="handleFile(this.files)">
+      </div>
+      <div id="csv-preview" style="margin-top:12px;display:none"></div>
+    </div>
+
+    <!-- Onglet Coller -->
+    <div class="tab-pane" id="tab-paste">
+      <div class="alert alert-jade" style="font-size:11.5px">
+        Collez une liste de <strong>numeros de telephone</strong>, un par ligne. Le nom n'est pas necessaire.
+      </div>
+      <textarea class="form-textarea" id="paste-numbers" style="min-height:140px" placeholder="0612345678&#10;0623456789&#10;+33634567890"></textarea>
+    </div>
+
+    <div id="import-result" style="margin-top:12px;display:none"></div>
+    <div class="modal-footer">
+      <button class="btn btn-jade" id="import-btn" onclick="doImport()">Importer</button>
+      <button class="btn btn-ghost" onclick="closeModal('import-modal')">Fermer</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block extra_scripts %}
+<script>
+let currentPage = 1, totalPages = 1, selectedFile = null, searchTimer = null;
+
+function closeModal(id){document.getElementById(id).classList.remove('open');}
+function debounceSearch(){clearTimeout(searchTimer);searchTimer=setTimeout(()=>{currentPage=1;loadContacts();},400);}
+function resetFilters(){['f-search','f-status','f-campaign','f-agent'].forEach(id=>document.getElementById(id).value='');currentPage=1;loadContacts();}
+function changePage(d){currentPage=Math.max(1,Math.min(totalPages,currentPage+d));loadContacts();}
+
+async function loadFilters(){
+  const [camps,agents]=await Promise.all([api('/api/campaigns').catch(()=>[]),api('/api/agents').catch(()=>[])]);
+  document.getElementById('f-campaign').innerHTML='<option value="">Toutes campagnes</option>'+camps.map(c=>`<option value="${c.id}">${c.name}</option>`).join('');
+  document.getElementById('f-agent').innerHTML='<option value="">Tous agents</option>'+agents.map(a=>`<option value="${a.id}">${a.avatar_emoji} ${a.name}</option>`).join('');
+  document.getElementById('import-campaign').innerHTML='<option value="">Aucune</option>'+camps.map(c=>`<option value="${c.id}">${c.name}</option>`).join('');
+  document.getElementById('import-agent').innerHTML='<option value="">Aucun</option>'+agents.map(a=>`<option value="${a.id}">${a.avatar_emoji} ${a.name}</option>`).join('');
+}
+
+async function loadContacts(){
+  const params=new URLSearchParams({page:currentPage,per_page:50});
+  const s=document.getElementById('f-search').value;if(s)params.set('search',s);
+  const st=document.getElementById('f-status').value;if(st)params.set('status',st);
+  const cp=document.getElementById('f-campaign').value;if(cp)params.set('campaign_id',cp);
+  const ag=document.getElementById('f-agent').value;if(ag)params.set('agent_id',ag);
+
+  const [data,stats]=await Promise.all([
+    api('/api/contacts?'+params).catch(()=>({contacts:[],total:0,pages:1})),
+    api('/api/contacts/stats').catch(()=>({})),
+  ]);
+
+  document.getElementById('contacts-stats').innerHTML=`
+    <div class="stat-card jade"><div class="stat-label">Total</div><div class="stat-value">${stats.total||0}</div></div>
+    <div class="stat-card sky"><div class="stat-label">Nouveaux</div><div class="stat-value">${stats.nouveau||0}</div></div>
+    <div class="stat-card blue"><div class="stat-label">Appeles</div><div class="stat-value">${stats.appele||0}</div></div>
+    <div class="stat-card jade"><div class="stat-label">Interesses</div><div class="stat-value">${stats.interesse||0}</div></div>
+    <div class="stat-card amber"><div class="stat-label">A rappeler</div><div class="stat-value">${stats.a_rappeler||0}</div></div>
+    <div class="stat-card red"><div class="stat-label">Do Not Call</div><div class="stat-value">${stats.do_not_call||0}</div></div>`;
+
+  totalPages=data.pages||1;
+  document.getElementById('contacts-count').textContent=`${data.total} contact(s)`;
+  document.getElementById('page-info').textContent=`Page ${data.page} / ${totalPages}`;
+  document.getElementById('prev-btn').disabled=currentPage<=1;
+  document.getElementById('next-btn').disabled=currentPage>=totalPages;
+
+  const tbody=document.getElementById('contacts-tbody');
+  if(!data.contacts.length){tbody.innerHTML='<tr><td colspan="9"><div class="empty-state"><div class="empty-icon">👤</div><p>Aucun contact</p></div></td></tr>';return;}
+  tbody.innerHTML=data.contacts.map(c=>`
+    <tr>
+      <td class="mono" style="color:var(--text2)">#${c.id}</td>
+      <td><div style="font-weight:600">${c.full_name}</div>${c.birth_date?`<div style="font-size:10px;color:var(--text2)">${c.birth_date}</div>`:''}</td>
+      <td class="phone-num">${c.phone}</td>
+      <td style="font-size:11.5px">${c.city||'—'}</td>
+      <td style="font-size:11.5px;color:var(--text2)">${c.extra_info||c.old_offer||'—'}</td>
+      <td>${badgeContact(c.status)}</td>
+      <td style="font-size:11px;color:var(--text2)">${c.last_call_at?fDate(c.last_call_at):'—'}</td>
+      <td class="mono" style="text-align:center">${c.attempt_count}</td>
+      <td><div style="display:flex;gap:4px">
+        <button class="btn btn-ghost btn-xs" onclick="editContact(${c.id})">✎</button>
+        <button class="btn btn-danger btn-xs" onclick="blacklistContact(${c.id})" title="Do Not Call">🚫</button>
+        <button class="btn btn-danger btn-xs" onclick="deleteContact(${c.id})">✕</button>
+      </div></td>
+    </tr>`).join('');
+}
+
+function openCreate(){
+  document.getElementById('contact-modal-title').textContent='Nouveau contact';
+  document.getElementById('c-id').value='';
+  ['c-fname','c-lname','c-phone','c-birth','c-city','c-info','c-notes'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('status-row').style.display='none';
+  document.getElementById('contact-modal').classList.add('open');
+}
+
+async function editContact(id){
+  const c=await api(`/api/contacts/${id}`);
+  document.getElementById('contact-modal-title').textContent='Modifier contact';
+  document.getElementById('c-id').value=id;
+  document.getElementById('c-fname').value=c.first_name||'';
+  document.getElementById('c-lname').value=c.last_name||'';
+  document.getElementById('c-phone').value=c.phone||'';
+  document.getElementById('c-birth').value=c.birth_date||'';
+  document.getElementById('c-city').value=c.city||'';
+  document.getElementById('c-info').value=c.extra_info||'';
+  document.getElementById('c-notes').value=c.notes||'';
+  document.getElementById('c-status').value=c.status||'nouveau';
+  document.getElementById('status-row').style.display='grid';
+  document.getElementById('contact-modal').classList.add('open');
+}
+
+async function saveContact(){
+  const id=document.getElementById('c-id').value;
+  const phone=document.getElementById('c-phone').value.trim();
+  if(!phone){toast('Le telephone est requis','amber');return;}
+  const payload={
+    first_name:document.getElementById('c-fname').value||null,
+    last_name:document.getElementById('c-lname').value||null,
+    phone,birth_date:document.getElementById('c-birth').value||null,
+    city:document.getElementById('c-city').value||null,
+    extra_info:document.getElementById('c-info').value||null,
+    notes:document.getElementById('c-notes').value||null,
+  };
+  if(id)payload.status=document.getElementById('c-status').value;
+  const btn=document.getElementById('contact-save-btn');btn.disabled=true;
+  try{
+    if(id){await api(`/api/contacts/${id}`,{method:'PUT',body:JSON.stringify(payload)});toast('Contact mis a jour','jade');}
+    else{await api('/api/contacts',{method:'POST',body:JSON.stringify(payload)});toast('Contact cree','jade');}
+    closeModal('contact-modal');loadContacts();
+  }catch(e){toast(e.message,'red');}
+  btn.disabled=false;
+}
+
+async function deleteContact(id){if(!confirm('Supprimer ce contact ?'))return;await api(`/api/contacts/${id}`,{method:'DELETE'});toast('Supprime','amber');loadContacts();}
+async function blacklistContact(id){if(!confirm('Ajouter a la liste Do Not Call ? Ce contact ne sera plus jamais appele.'))return;await api(`/api/contacts/${id}/blacklist`,{method:'POST'});toast('Ajoute a Do Not Call','red');loadContacts();}
+
+let importMode = 'csv';
+function switchImportTab(btn, tabId){
+  document.querySelectorAll('#import-modal .tab-btn').forEach(b=>b.classList.remove('active'));
+  document.querySelectorAll('#import-modal .tab-pane').forEach(p=>p.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById(tabId).classList.add('active');
+  importMode = (tabId === 'tab-paste') ? 'paste' : 'csv';
+}
+
+function openImport(){
+  document.getElementById('csv-preview').style.display='none';
+  document.getElementById('import-result').style.display='none';
+  document.getElementById('paste-numbers').value='';
+  selectedFile=null; importMode='csv';
+  // Reset onglets
+  const btns=document.querySelectorAll('#import-modal .tab-btn');
+  if(btns.length){btns.forEach(b=>b.classList.remove('active'));btns[0].classList.add('active');
+    document.getElementById('tab-csv').classList.add('active');
+    document.getElementById('tab-paste').classList.remove('active');}
+  document.getElementById('import-modal').classList.add('open');
+}
+function handleFile(files){if(!files.length)return;selectedFile=files[0];
+  const p=document.getElementById('csv-preview');p.style.display='block';
+  p.innerHTML=`<div class="alert alert-jade">📄 ${selectedFile.name} (${(selectedFile.size/1024).toFixed(1)} Ko)</div>`;}
+
+async function doImport(){
+  const btn=document.getElementById('import-btn');
+  const cp=document.getElementById('import-campaign').value;
+  const ag=document.getElementById('import-agent').value;
+  const rd=document.getElementById('import-result');
+  btn.disabled=true;btn.innerHTML='<div class="spinner"></div>';
+
+  try{
+    let data;
+    if(importMode==='paste'){
+      const txt=document.getElementById('paste-numbers').value.trim();
+      if(!txt){toast('Collez au moins un numero','amber');btn.disabled=false;btn.innerHTML='Importer';return;}
+      const numbers=txt.split(/[\n,;]+/).map(s=>s.trim()).filter(Boolean);
+      data=await api('/api/contacts/import-numbers',{method:'POST',body:JSON.stringify({
+        numbers, campaign_id:cp?parseInt(cp):null, agent_id:ag?parseInt(ag):null,
+      })});
+    } else {
+      if(!selectedFile){toast('Choisissez un fichier CSV','amber');btn.disabled=false;btn.innerHTML='Importer';return;}
+      const fd=new FormData();fd.append('file',selectedFile);
+      if(cp)fd.append('campaign_id',cp);
+      if(ag)fd.append('agent_id',ag);
+      fd.append('delimiter',',');
+      const res=await fetch('/api/contacts/import',{method:'POST',body:fd});
+      data=await res.json();
+      if(!res.ok)throw new Error(data.detail||'Erreur');
+    }
+    rd.style.display='block';rd.className='alert alert-jade';
+    rd.innerHTML=`✓ <strong>${data.imported}</strong> importes · ${data.duplicates} doublons · ${data.invalid} invalides · ${data.blocked} en liste rouge`;
+    toast(`${data.imported} contacts importes`,'jade');loadContacts();
+  }catch(e){rd.style.display='block';rd.className='alert alert-red';rd.textContent='Erreur : '+e.message;}
+  btn.disabled=false;btn.innerHTML='Importer';
+}
+
+function exportContacts(){
+  const params=new URLSearchParams();
+  const st=document.getElementById('f-status').value;if(st)params.set('status',st);
+  const cp=document.getElementById('f-campaign').value;if(cp)params.set('campaign_id',cp);
+  window.open('/api/contacts/export?'+params,'_blank');
+}
+
+loadFilters().then(loadContacts);
+</script>
+{% endblock %}

@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% block title %}Do Not Call{% endblock %}
+{% block content %}
+<div class="topbar">
+  <div class="topbar-left"><h1>Do Not Call</h1><p>Liste des numeros a ne jamais appeler</p></div>
+  <div class="topbar-right">
+    <button class="btn btn-ghost btn-sm" onclick="loadBlacklist()">↻</button>
+    <button class="btn btn-jade btn-sm" onclick="document.getElementById('bl-modal').classList.add('open')">+ Ajouter un numero</button>
+  </div>
+</div>
+<div class="content">
+  <div class="alert alert-amber" style="margin-bottom:16px">
+    ⚠ Les numeros de cette liste sont automatiquement <strong>bloques lors de chaque import</strong> et ne seront jamais appeles par les campagnes.
+  </div>
+
+  <div class="stats-grid" id="bl-stats"></div>
+
+  <div class="card">
+    <div class="card-header"><span class="card-title">Numeros bloques</span><span id="bl-count" style="font-size:11px;color:var(--text2);font-family:var(--mono)"></span></div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Telephone</th><th>Raison</th><th>Source</th><th>Ajoute le</th><th>Action</th></tr></thead>
+        <tbody id="bl-tbody"><tr><td colspan="5" style="text-align:center;padding:32px"><div class="spinner"></div></td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Add -->
+<div class="modal-overlay" id="bl-modal">
+  <div class="modal-box">
+    <div class="modal-head"><span class="modal-title">Ajouter a la liste noire</span><button class="modal-close" onclick="closeModal('bl-modal')">✕</button></div>
+    <div class="form-group"><label class="form-label">Telephone *</label><input class="form-input" id="bl-phone" placeholder="+33612345678"></div>
+    <div class="form-group"><label class="form-label">Raison</label>
+      <select class="form-select" id="bl-reason">
+        <option value="Demande du client">Demande du client ("ne m'appelez plus")</option>
+        <option value="Refus definitif">Refus definitif</option>
+        <option value="Numero professionnel">Numero professionnel</option>
+        <option value="Erreur / mauvais numero">Erreur / mauvais numero</option>
+        <option value="Ajout manuel">Autre</option>
+      </select></div>
+    <div class="form-group"><label class="form-label">Notes</label><textarea class="form-textarea" id="bl-notes" style="min-height:50px"></textarea></div>
+    <div class="modal-footer">
+      <button class="btn btn-jade" id="bl-save-btn" onclick="addBlacklist()">Ajouter</button>
+      <button class="btn btn-ghost" onclick="closeModal('bl-modal')">Annuler</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block extra_scripts %}
+<script>
+function closeModal(id){document.getElementById(id).classList.remove('open');}
+
+async function loadBlacklist(){
+  const data = await api('/api/blacklist').catch(()=>({entries:[],total:0}));
+  document.getElementById('bl-stats').innerHTML = `
+    <div class="stat-card red"><div class="stat-label">Numeros bloques</div><div class="stat-value">${data.total||0}</div><div class="stat-sub">Do Not Call</div></div>`;
+  document.getElementById('bl-count').textContent = `${data.total} numero(s)`;
+  const tbody = document.getElementById('bl-tbody');
+  if(!data.entries.length){tbody.innerHTML='<tr><td colspan="5"><div class="empty-state"><div class="empty-icon">🚫</div><p>Aucun numero en liste noire</p></div></td></tr>';return;}
+  const srcBadge={manual:['badge-blue','Manuel'],call:['badge-amber','Appel'],import:['badge-gray','Import']};
+  tbody.innerHTML = data.entries.map(e=>{
+    const[cl,lb]=srcBadge[e.source]||['badge-gray',e.source];
+    return `<tr>
+      <td class="phone-num">${e.phone}</td>
+      <td style="font-size:12px">${e.reason||'—'}</td>
+      <td><span class="badge ${cl}">${lb}</span></td>
+      <td style="font-size:11px;color:var(--text2)">${fDate(e.created_at)}</td>
+      <td><button class="btn btn-outline btn-xs" onclick="removeBlacklist('${e.phone}')">Retirer</button></td>
+    </tr>`;
+  }).join('');
+}
+
+async function addBlacklist(){
+  const phone=document.getElementById('bl-phone').value.trim();
+  if(!phone){toast('Le telephone est requis','amber');return;}
+  const btn=document.getElementById('bl-save-btn');btn.disabled=true;
+  try{
+    await api('/api/blacklist',{method:'POST',body:JSON.stringify({
+      phone, reason:document.getElementById('bl-reason').value,
+      notes:document.getElementById('bl-notes').value||null,
+    })});
+    toast('Numero ajoute a la liste noire','jade');
+    closeModal('bl-modal');
+    ['bl-phone','bl-notes'].forEach(id=>document.getElementById(id).value='');
+    loadBlacklist();
+  }catch(e){toast(e.message,'red');}
+  btn.disabled=false;
+}
+
+async function removeBlacklist(phone){
+  if(!confirm(`Retirer ${phone} de la liste noire ?`))return;
+  await api(`/api/blacklist/${encodeURIComponent(phone)}`,{method:'DELETE'});
+  toast('Numero retire','amber');
+  loadBlacklist();
+}
+
+loadBlacklist();
+</script>
+{% endblock %}

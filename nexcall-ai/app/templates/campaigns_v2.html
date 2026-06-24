@@ -1,0 +1,376 @@
+{% extends "base.html" %}
+{% block title %}Campagnes{% endblock %}
+{% block content %}
+<div class="topbar">
+  <div class="topbar-left"><h1>Campagnes</h1><p>Gestion des campagnes d'appels sortants</p></div>
+  <div class="topbar-right">
+    <button class="btn btn-ghost btn-sm" onclick="loadCampaigns()">↻</button>
+    <button class="btn btn-jade btn-sm" onclick="openCreate()">+ Nouvelle campagne</button>
+  </div>
+</div>
+<div class="content">
+  <div id="campaigns-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:16px">
+    <div style="text-align:center;padding:40px;color:var(--text2)"><div class="spinner"></div></div>
+  </div>
+</div>
+
+<!-- Modal Create/Edit Campaign -->
+<div class="modal-overlay" id="camp-modal">
+  <div class="modal-box wide">
+    <div class="modal-head">
+      <span class="modal-title" id="camp-modal-title">Nouvelle campagne</span>
+      <button class="modal-close" onclick="closeModal('camp-modal')">✕</button>
+    </div>
+    <input type="hidden" id="c-id">
+    <div class="form-group"><label class="form-label">Nom de la campagne *</label>
+      <input class="form-input" id="c-name" placeholder="Prospects Mutuelle Mars"></div>
+    <div class="form-group"><label class="form-label">Description</label>
+      <textarea class="form-textarea" id="c-desc" style="min-height:55px"></textarea></div>
+    <div class="form-grid-2">
+      <div class="form-group"><label class="form-label">Agent IA utilise *</label>
+        <select class="form-select" id="c-agent"><option value="">Chargement...</option></select></div>
+      <div class="form-group"><label class="form-label">Type</label>
+        <select class="form-select" id="c-type">
+          <option value="outbound">📤 Sortant (Outbound)</option>
+          <option value="inbound">📥 Entrant (Inbound)</option>
+        </select></div>
+    </div>
+    <div class="form-grid-2">
+      <div class="form-group"><label class="form-label">Date de lancement</label>
+        <input class="form-input" id="c-scheduled" type="datetime-local">
+        <div class="form-hint">Date future = campagne programmee. Vide ou maintenant = lancement direct.</div></div>
+      <div class="form-group"><label class="form-label">Appels simultanes max</label>
+        <input class="form-input" id="c-concurrent" type="number" min="1" max="20" value="3"></div>
+    </div>
+    <div class="form-group" style="background:var(--panel2);border:1px solid var(--border);border-radius:8px;padding:12px">
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;font-weight:600;margin-bottom:8px">
+        <input type="checkbox" id="c-launch-now" style="width:16px;height:16px"> Lancer maintenant (ignorer la date)
+      </label>
+      <label class="form-label">Numero de telephone de test (appel reel Ringover)</label>
+      <input class="form-input" id="c-test-phone" placeholder="+33XXXXXXXXX — votre numero pour recevoir l'appel">
+      <div class="form-hint">Le bouton « Tester l'appel » lance un VRAI appel Ringover vers ce numero (necessite RINGOVER_API_KEY + RINGOVER_PHONE_NUMBER).</div>
+    </div>
+    <div class="form-grid-3">
+      <div class="form-group"><label class="form-label">Horaire debut</label>
+        <input class="form-input" id="c-hstart" type="time" value="09:00"></div>
+      <div class="form-group"><label class="form-label">Horaire fin</label>
+        <input class="form-input" id="c-hend" type="time" value="20:00"></div>
+      <div class="form-group"><label class="form-label">Tentatives max</label>
+        <input class="form-input" id="c-attempts" type="number" min="1" max="10" value="3"></div>
+    </div>
+    <div class="form-grid-2">
+      <div class="form-group"><label class="form-label">Numero conseiller (transfert humain)</label>
+        <input class="form-input" id="c-transfer" placeholder="+33XXXXXXXXX"></div>
+      <div class="form-group"><label class="form-label">Attente avant no-answer (sec)</label>
+        <input class="form-input" id="c-timeout" type="number" min="15" max="120" value="45"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-jade" id="camp-save-btn" onclick="saveCampaign()">Enregistrer</button>
+      <button class="btn btn-ghost" onclick="closeModal('camp-modal')">Annuler</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Import CSV -->
+<div class="modal-overlay" id="import-modal">
+  <div class="modal-box">
+    <div class="modal-head">
+      <span class="modal-title">📥 Importer des prospects — <span id="import-camp-name"></span></span>
+      <button class="modal-close" onclick="closeModal('import-modal')">✕</button>
+    </div>
+    <div class="alert alert-jade" style="font-size:11.5px">
+      Colonnes attendues : <code>nom, prenom, telephone, date_naissance, ville, informations</code>
+    </div>
+    <input type="hidden" id="import-camp-id">
+    <div class="upload-zone" id="upload-zone" onclick="document.getElementById('csv-file').click()">
+      <div style="font-size:32px;margin-bottom:8px">📄</div>
+      <div style="font-weight:600;margin-bottom:4px">Cliquez pour choisir un fichier CSV</div>
+      <div style="font-size:11px;color:var(--text2)">ou glissez-deposez ici</div>
+      <input type="file" id="csv-file" accept=".csv" onchange="handleFileSelect(this.files)">
+    </div>
+    <div id="csv-preview" style="margin-top:14px;display:none"></div>
+    <div id="import-result" style="margin-top:14px;display:none"></div>
+    <div class="modal-footer">
+      <button class="btn btn-jade" id="import-btn" onclick="doImport()" disabled>Importer</button>
+      <button class="btn btn-ghost" onclick="closeModal('import-modal')">Fermer</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Progress -->
+<div class="modal-overlay" id="progress-modal">
+  <div class="modal-box">
+    <div class="modal-head">
+      <span class="modal-title">📊 Progression — <span id="progress-camp-name"></span></span>
+      <button class="modal-close" onclick="closeModal('progress-modal')">✕</button>
+    </div>
+    <div id="progress-content"><div style="text-align:center;padding:24px"><div class="spinner"></div></div></div>
+  </div>
+</div>
+{% endblock %}
+{% block extra_scripts %}
+<script>
+let selectedFile = null;
+
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+function campTypeColor(type) { return type === 'outbound' ? 'var(--blue)' : 'var(--jade)'; }
+
+function campCard(c, agentsMap) {
+  const agent = agentsMap[c.agent_id];
+  const agentName = agent ? `${agent.avatar_emoji} ${agent.name}` : '— Aucun agent';
+  return `
+  <div style="background:var(--panel);border:1px solid var(--border);border-radius:10px;overflow:hidden">
+    <div style="padding:16px;border-bottom:1px solid var(--border)">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px">
+        <div>
+          <div style="font-weight:700;font-size:14px;margin-bottom:3px;color:var(--text)">${c.name}</div>
+          <div style="font-size:11px;color:var(--text2)">${c.type === 'outbound' ? '📤 Sortant' : '📥 Entrant'} • ${agentName}</div>
+        </div>
+        ${badgeCampaign(c.status)}
+      </div>
+      ${c.description ? `<div style="font-size:12px;color:var(--text2);line-height:1.5">${c.description}</div>` : ''}
+    </div>
+
+    <div style="padding:12px 16px">
+      <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text2);margin-bottom:6px">
+        <span>Progression</span><span>${c.progress_pct || 0}%</span>
+      </div>
+      <div class="progress-track"><div class="progress-fill" style="width:${c.progress_pct||0}%;background:var(--jade)"></div></div>
+    </div>
+
+    <div style="padding:10px 16px;display:grid;grid-template-columns:repeat(4,1fr);gap:6px;border-top:1px solid var(--border);border-bottom:1px solid var(--border)">
+      <div style="text-align:center"><div class="mono" style="font-size:18px;color:var(--jade)">${c.total_prospects||0}</div><div style="font-size:9px;color:var(--text2);text-transform:uppercase">Prospects</div></div>
+      <div style="text-align:center"><div class="mono" style="font-size:18px;color:var(--sky)">${c.total_calls||0}</div><div style="font-size:9px;color:var(--text2);text-transform:uppercase">Appels</div></div>
+      <div style="text-align:center"><div class="mono" style="font-size:18px;color:var(--amber)">${c.leads_generated||0}</div><div style="font-size:9px;color:var(--text2);text-transform:uppercase">Leads</div></div>
+      <div style="text-align:center"><div class="mono" style="font-size:18px;color:var(--violet)">${c.transferred_calls||0}</div><div style="font-size:9px;color:var(--text2);text-transform:uppercase">Transferts</div></div>
+    </div>
+
+    <div style="padding:12px 14px;display:flex;gap:6px;flex-wrap:wrap">
+      <button class="btn btn-ghost btn-sm" onclick="openImport(${c.id},'${c.name}')">📥 Import CSV</button>
+      <button class="btn btn-outline btn-sm" onclick="testCall(${c.id})">🧪 Tester l'appel</button>
+      ${c.status==='draft'||c.status==='scheduled' ? `<button class="btn btn-jade btn-sm" onclick="launchCampaign(${c.id})">🚀 Lancer</button>` : ''}
+      ${c.status==='active' ? `<button class="btn btn-ghost btn-sm" onclick="pauseCampaign(${c.id})">⏸ Pause</button>` : ''}
+      ${c.status==='active'||c.status==='paused' ? `<button class="btn btn-outline btn-sm" onclick="viewProgress(${c.id},'${c.name}')">📊 Suivi</button>` : ''}
+      <button class="btn btn-ghost btn-sm" onclick="editCampaign(${c.id})">✎</button>
+      <button class="btn btn-danger btn-sm" onclick="deleteCampaign(${c.id})">✕</button>
+    </div>
+  </div>`;
+}
+
+let allAgents = [];
+let agentsMap = {};
+
+async function loadCampaigns() {
+  const [camps, agents] = await Promise.all([
+    api('/api/campaigns').catch(()=>[]),
+    api('/api/agents').catch(()=>[]),
+  ]);
+  allAgents = agents;
+  agentsMap = {}; agents.forEach(a => agentsMap[a.id] = a);
+
+  const grid = document.getElementById('campaigns-grid');
+  if (!camps.length) {
+    grid.innerHTML = `<div style="grid-column:1/-1"><div class="empty-state"><div class="empty-icon">🎯</div><p>Aucune campagne — creez-en une pour demarrer</p></div></div>`;
+    return;
+  }
+  grid.innerHTML = camps.map(c => campCard(c, agentsMap)).join('');
+}
+
+async function populateAgentSelect() {
+  const sel = document.getElementById('c-agent');
+  if (!allAgents.length) allAgents = await api('/api/agents?active_only=true').catch(()=>[]);
+  sel.innerHTML = '<option value="">— Selectionner —</option>' +
+    allAgents.map(a => `<option value="${a.id}">${a.avatar_emoji} ${a.name} (${a.service_label})</option>`).join('');
+}
+
+async function openCreate() {
+  document.getElementById('camp-modal-title').textContent = 'Nouvelle campagne';
+  document.getElementById('c-id').value = '';
+  ['c-name','c-desc','c-scheduled','c-transfer','c-test-phone'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('c-type').value = 'outbound';
+  document.getElementById('c-concurrent').value = '3';
+  document.getElementById('c-hstart').value = '09:00';
+  document.getElementById('c-hend').value = '20:00';
+  document.getElementById('c-attempts').value = '3';
+  document.getElementById('c-timeout').value = '45';
+  document.getElementById('c-launch-now').checked = false;
+  await populateAgentSelect();
+
+  // Pre-select agent if passed via URL
+  const urlParams = new URLSearchParams(window.location.search);
+  const agentId = urlParams.get('agent_id');
+  if (agentId) document.getElementById('c-agent').value = agentId;
+
+  document.getElementById('camp-modal').classList.add('open');
+}
+
+async function editCampaign(id) {
+  const c = await api(`/api/campaigns/${id}`);
+  document.getElementById('camp-modal-title').textContent = 'Modifier campagne';
+  document.getElementById('c-id').value = id;
+  document.getElementById('c-name').value = c.name || '';
+  document.getElementById('c-desc').value = c.description || '';
+  document.getElementById('c-type').value = c.type || 'outbound';
+  document.getElementById('c-concurrent').value = c.max_concurrent || 3;
+  document.getElementById('c-hstart').value = c.call_hours_start || '09:00';
+  document.getElementById('c-hend').value = c.call_hours_end || '20:00';
+  document.getElementById('c-attempts').value = c.max_attempts || 3;
+  document.getElementById('c-timeout').value = c.ring_timeout || 45;
+  document.getElementById('c-transfer').value = c.transfer_number || '';
+  document.getElementById('c-test-phone').value = c.test_phone_number || '';
+  document.getElementById('c-launch-now').checked = false;
+  // scheduled_at peut etre une chaine ISO -> garder seulement pour datetime-local (YYYY-MM-DDTHH:MM)
+  document.getElementById('c-scheduled').value = c.scheduled_at ? String(c.scheduled_at).slice(0,16) : '';
+  await populateAgentSelect();
+  document.getElementById('c-agent').value = c.agent_id || '';
+  document.getElementById('camp-modal').classList.add('open');
+}
+
+async function saveCampaign() {
+  const id = document.getElementById('c-id').value;
+  const name = document.getElementById('c-name').value.trim();
+  if (!name) { toast('Le nom est requis', 'amber'); return; }
+
+  const payload = {
+    name, description: document.getElementById('c-desc').value || null,
+    type: document.getElementById('c-type').value,
+    agent_id: parseInt(document.getElementById('c-agent').value) || null,
+    scheduled_at: document.getElementById('c-scheduled').value || null,
+    launch_now: document.getElementById('c-launch-now').checked,
+    test_phone_number: document.getElementById('c-test-phone').value || null,
+    max_concurrent: parseInt(document.getElementById('c-concurrent').value) || 3,
+    call_hours_start: document.getElementById('c-hstart').value || null,
+    call_hours_end: document.getElementById('c-hend').value || null,
+    max_attempts: parseInt(document.getElementById('c-attempts').value) || 3,
+    ring_timeout: parseInt(document.getElementById('c-timeout').value) || 45,
+    transfer_number: document.getElementById('c-transfer').value || null,
+  };
+
+  const btn = document.getElementById('camp-save-btn');
+  btn.disabled = true;
+  try {
+    if (id) {
+      await api(`/api/campaigns/${id}`, {method:'PUT', body:JSON.stringify(payload)});
+      toast('Campagne mise a jour !', 'jade');
+    } else {
+      await api('/api/campaigns', {method:'POST', body:JSON.stringify(payload)});
+      toast('Campagne creee !', 'jade');
+    }
+    closeModal('camp-modal');
+    loadCampaigns();
+  } catch(e) { toast(e.message, 'red'); }
+  btn.disabled = false;
+}
+
+function openImport(id, name) {
+  document.getElementById('import-camp-id').value = id;
+  document.getElementById('import-camp-name').textContent = name;
+  document.getElementById('csv-preview').style.display = 'none';
+  document.getElementById('import-result').style.display = 'none';
+  document.getElementById('import-btn').disabled = true;
+  selectedFile = null;
+  document.getElementById('import-modal').classList.add('open');
+}
+
+function handleFileSelect(files) {
+  if (!files.length) return;
+  selectedFile = files[0];
+  const preview = document.getElementById('csv-preview');
+  preview.style.display = 'block';
+  preview.innerHTML = `<div class="alert alert-jade">📄 Fichier selectionne : <strong>${selectedFile.name}</strong> (${(selectedFile.size/1024).toFixed(1)} Ko)</div>`;
+  document.getElementById('import-btn').disabled = false;
+}
+
+async function doImport() {
+  if (!selectedFile) return;
+  const campId = document.getElementById('import-camp-id').value;
+  const btn = document.getElementById('import-btn');
+  btn.disabled = true; btn.innerHTML = '<div class="spinner"></div>';
+
+  const formData = new FormData();
+  formData.append('campaign_id', campId);
+  formData.append('delimiter', ',');
+  formData.append('file', selectedFile);
+
+  try {
+    const res = await fetch('/api/contacts/import', { method: 'POST', body: formData });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Erreur import');
+
+    const rd = document.getElementById('import-result');
+    rd.style.display = 'block';
+    rd.className = 'alert alert-jade';
+    rd.innerHTML = `✓ <strong>${data.imported}</strong> importes · ${data.duplicates||0} doublons · ${data.invalid||0} invalides · ${data.blocked||0} en liste rouge`;
+    toast(`${data.imported} contacts importes !`, 'jade');
+    loadCampaigns();
+  } catch(e) {
+    const rd = document.getElementById('import-result');
+    rd.style.display = 'block';
+    rd.className = 'alert alert-red';
+    rd.textContent = `Erreur : ${e.message}`;
+  }
+  btn.disabled = false; btn.innerHTML = 'Importer';
+}
+
+async function launchCampaign(id) {
+  if (!confirm('Lancer cette campagne maintenant ? Les appels vont commencer immediatement.')) return;
+  try {
+    const r = await api(`/api/campaigns/${id}/launch`, {method:'POST'});
+    toast(`${r.launched || 0} appels lances !`, 'jade');
+    loadCampaigns();
+  } catch(e) { toast(e.message, 'red'); }
+}
+
+async function testCall(id) {
+  // Recuperer le numero de test enregistre, sinon le demander
+  let phone = null;
+  try { const c = await api(`/api/campaigns/${id}`); phone = c.test_phone_number; } catch {}
+  if (!phone) {
+    phone = prompt('Numero de telephone de test (ex: +33612345678) :');
+    if (!phone) return;
+  }
+  try {
+    const r = await api(`/api/campaigns/${id}/test-call`, {
+      method: 'POST', body: JSON.stringify({ test_phone_number: phone })
+    });
+    if (r.success) {
+      toast(`Appel reel lance via Ringover vers ${r.phone} (depuis ${r.caller}). Votre ligne sonne d'abord, decrochez puis la cible est composee.`, 'jade', 9000);
+    } else {
+      toast('Echec Ringover : ' + (r.error || 'erreur inconnue'), 'red', 9000);
+    }
+    loadCampaigns();
+  } catch(e) { toast(e.message, 'red', 9000); }
+}
+
+async function pauseCampaign(id) {
+  await api(`/api/campaigns/${id}/pause`, {method:'POST'});
+  toast('Campagne en pause', 'amber');
+  loadCampaigns();
+}
+
+async function viewProgress(id, name) {
+  document.getElementById('progress-camp-name').textContent = name;
+  document.getElementById('progress-modal').classList.add('open');
+  const stats = await api(`/api/campaigns/${id}/stats`).catch(()=>({}));
+  document.getElementById('progress-content').innerHTML = `
+    <div class="stats-grid">
+      <div class="stat-card jade"><div class="stat-label">Total</div><div class="stat-value">${stats.total||0}</div></div>
+      <div class="stat-card sky"><div class="stat-label">En attente</div><div class="stat-value">${stats.pending||0}</div></div>
+      <div class="stat-card amber"><div class="stat-label">Joints</div><div class="stat-value">${stats.reached||0}</div></div>
+      <div class="stat-card violet"><div class="stat-label">Convertis</div><div class="stat-value">${stats.converted||0}</div></div>
+    </div>
+    <div class="progress-track" style="height:8px;margin-top:8px"><div class="progress-fill" style="width:${stats.progress_pct||0}%;background:var(--jade)"></div></div>
+    <div style="text-align:center;margin-top:8px;font-size:12px;color:var(--text2)">${stats.progress_pct||0}% complete</div>`;
+}
+
+async function deleteCampaign(id) {
+  if (!confirm('Supprimer cette campagne et tous ses prospects ?')) return;
+  await api(`/api/campaigns/${id}`, {method:'DELETE'});
+  toast('Campagne supprimee', 'amber');
+  loadCampaigns();
+}
+
+loadCampaigns();
+</script>
+{% endblock %}

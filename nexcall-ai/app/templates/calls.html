@@ -1,0 +1,246 @@
+{% extends "base.html" %}
+{% block title %}Appels{% endblock %}
+
+{% block content %}
+<div class="topbar">
+  <div class="topbar-left">
+    <h1>Appels</h1>
+    <p>Historique complet des communications</p>
+  </div>
+  <div class="topbar-right">
+    <select class="form-select" id="f-status" style="width:150px;padding:6px 10px" onchange="loadCalls()">
+      <option value="">Tous les statuts</option>
+      <option value="incoming">Entrant</option>
+      <option value="in_progress">En cours</option>
+      <option value="completed">Terminé</option>
+      <option value="transferred">Transféré</option>
+      <option value="missed">Manqué</option>
+      <option value="failed">Échoué</option>
+    </select>
+    <button class="btn btn-ghost btn-sm" onclick="loadCalls()">↻</button>
+    <button class="btn btn-jade btn-sm" onclick="openSimModal()">☎ Simuler</button>
+  </div>
+</div>
+
+<div class="content">
+  <div class="stats-row">
+    <div class="stat-card jade"><div class="stat-label">Total</div><div class="stat-value" id="s-total">—</div></div>
+    <div class="stat-card jade"><div class="stat-label">Terminés</div><div class="stat-value" id="s-done">—</div></div>
+    <div class="stat-card violet"><div class="stat-label">Transférés</div><div class="stat-value" id="s-xfr">—</div></div>
+    <div class="stat-card amber"><div class="stat-label">Manqués</div><div class="stat-value" id="s-miss">—</div></div>
+    <div class="stat-card sky"><div class="stat-label">En cours</div><div class="stat-value" id="s-live">—</div></div>
+    <div class="stat-card violet"><div class="stat-label">Durée moy.</div><div class="stat-value" id="s-dur" style="font-size:20px">—</div></div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">Liste des appels</span>
+      <span id="calls-count" style="font-size:11px;color:var(--text3);font-family:var(--font-mono)"></span>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>#</th><th>Appelant</th><th>Statut</th><th>IVR</th>
+            <th>Durée</th><th>Résumé IA</th><th>Date</th><th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="calls-tbody">
+          <tr><td colspan="8" style="text-align:center;padding:32px"><div class="spinner"></div></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ── Detail Modal ─────────────────────────────────────────────── -->
+<div class="modal-overlay" id="detail-modal">
+  <div class="modal-box wide">
+    <div class="modal-head">
+      <span class="modal-title">Détail de l'appel</span>
+      <button class="modal-close" onclick="closeDetail()">✕</button>
+    </div>
+    <div id="detail-body"></div>
+  </div>
+</div>
+
+<!-- ── Simulateur Modal ─────────────────────────────────────────── -->
+<div class="modal-overlay" id="sim-modal">
+  <div class="modal-box">
+    <div class="modal-head">
+      <span class="modal-title">☎ Simuler un appel</span>
+      <button class="modal-close" onclick="document.getElementById('sim-modal').classList.remove('open')">✕</button>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Numéro appelant</label>
+      <input class="form-input" id="sim-phone" value="+33600000000">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Touche IVR</label>
+      <select class="form-select" id="sim-ivr">
+        <option value="1">1 — Assurance Auto</option>
+        <option value="2">2 — Assurance Santé</option>
+        <option value="3">3 — Transfert</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Message du client</label>
+      <textarea class="form-textarea" id="sim-msg">Bonjour, je cherche une assurance auto. Mon budget mensuel est de 100€.</textarea>
+    </div>
+    <div id="sim-result" style="display:none;margin-bottom:12px"></div>
+    <div class="modal-footer">
+      <button class="btn btn-jade" id="sim-btn" onclick="runSim()">▶ Lancer</button>
+      <button class="btn btn-ghost" onclick="document.getElementById('sim-modal').classList.remove('open')">Annuler</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+async function loadCalls() {
+  const status = document.getElementById('f-status').value;
+  const url = `/api/calls?limit=100${status ? '&status='+status : ''}`;
+
+  const [calls, stats] = await Promise.all([
+    api(url).catch(() => []),
+    api('/api/calls/stats').catch(() => ({}))
+  ]);
+
+  document.getElementById('s-total').textContent = stats.total ?? '—';
+  document.getElementById('s-done').textContent  = stats.completed ?? '—';
+  document.getElementById('s-xfr').textContent   = stats.transferred ?? '—';
+  document.getElementById('s-miss').textContent  = stats.missed ?? '—';
+  document.getElementById('s-live').textContent  = stats.in_progress ?? '—';
+  document.getElementById('s-dur').textContent   = stats.avg_duration != null ? fDur(stats.avg_duration) : '—';
+
+  document.getElementById('calls-count').textContent = `${calls.length} résultat(s)`;
+
+  const tbody = document.getElementById('calls-tbody');
+  if (!calls.length) {
+    tbody.innerHTML = '<tr><td colspan="8"><div class="empty-state"><div class="empty-icon">☎</div><p>Aucun appel trouvé</p></div></td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = calls.map(c => `
+    <tr>
+      <td class="mono" style="color:var(--text3)">#${c.id}</td>
+      <td class="phone-num">${c.caller_number}</td>
+      <td>${badgeStatus(c.status)}</td>
+      <td style="font-size:11px">${c.ivr_choice ? `<span class="badge badge-sky">${c.ivr_choice.replace('_',' ')}</span>` : '—'}</td>
+      <td class="mono">${fDur(c.duration)}</td>
+      <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11.5px;color:var(--text3)">
+        ${c.ai_summary ? c.ai_summary.replace(/<[^>]+>/g,'').substring(0,80)+'…' : c.transcript ? 'Transcript disponible' : '—'}
+      </td>
+      <td style="font-size:11px;color:var(--text3)">${fDate(c.created_at)}</td>
+      <td>
+        <div style="display:flex;gap:5px">
+          <button class="btn btn-ghost btn-xs" onclick="showDetail(${c.id})">👁</button>
+          ${c.status === 'in_progress' ? `<button class="btn btn-outline btn-xs" onclick="doTransfer(${c.id})">↗</button>` : ''}
+          <button class="btn btn-danger btn-xs" onclick="deleteCall(${c.id})">✕</button>
+        </div>
+      </td>
+    </tr>
+  `).join('');
+}
+
+async function showDetail(id) {
+  const c = await api(`/api/calls/${id}`);
+  const body = document.getElementById('detail-body');
+  body.innerHTML = `
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-bottom:20px">
+      <div>
+        <div class="form-label">Appelant</div>
+        <div class="phone-num" style="font-size:15px">${c.caller_number}</div>
+      </div>
+      <div>
+        <div class="form-label">Statut</div>
+        ${badgeStatus(c.status)}
+      </div>
+      <div>
+        <div class="form-label">Durée</div>
+        <div class="mono">${fDur(c.duration)}</div>
+      </div>
+      <div>
+        <div class="form-label">Choix IVR</div>
+        <div style="font-size:12px">${c.ivr_choice || '—'}</div>
+      </div>
+      <div>
+        <div class="form-label">Début</div>
+        <div style="font-size:12px;color:var(--text3)">${fDate(c.started_at)}</div>
+      </div>
+      <div>
+        <div class="form-label">Fin</div>
+        <div style="font-size:12px;color:var(--text3)">${fDate(c.ended_at)}</div>
+      </div>
+    </div>
+    ${c.transcript ? `
+      <div class="form-group">
+        <div class="form-label">Transcript de la conversation</div>
+        <div style="background:var(--panel2);border:1px solid var(--border);border-radius:6px;padding:14px;font-size:12px;line-height:1.9;white-space:pre-wrap;max-height:220px;overflow-y:auto;font-family:var(--font-mono);color:var(--text2)">${c.transcript}</div>
+      </div>
+    ` : ''}
+    ${c.ai_summary ? `
+      <div class="form-group">
+        <div class="form-label">Résumé IA</div>
+        <div style="background:var(--jade-glow);border:1px solid rgba(0,229,160,.15);border-radius:6px;padding:14px;font-size:13px;line-height:1.75;color:var(--text)">${c.ai_summary}</div>
+      </div>
+    ` : ''}
+  `;
+  document.getElementById('detail-modal').classList.add('open');
+}
+
+function closeDetail() { document.getElementById('detail-modal').classList.remove('open'); }
+
+async function doTransfer(id) {
+  if (!confirm('Transférer cet appel vers un agent humain ?')) return;
+  try {
+    await api(`/api/calls/${id}/transfer`, { method: 'POST' });
+    toast('Appel transféré !', 'jade');
+    loadCalls();
+  } catch(e) { toast(e.message, 'crimson'); }
+}
+
+async function deleteCall(id) {
+  if (!confirm('Supprimer cet enregistrement d\'appel ?')) return;
+  try {
+    await api(`/api/calls/${id}`, { method: 'DELETE' });
+    toast('Appel supprimé', 'amber');
+    loadCalls();
+  } catch(e) { toast(e.message, 'crimson'); }
+}
+
+function openSimModal() { document.getElementById('sim-modal').classList.add('open'); }
+
+async function runSim() {
+  const btn = document.getElementById('sim-btn');
+  const rd  = document.getElementById('sim-result');
+  btn.disabled = true;
+  btn.innerHTML = '<div class="spinner"></div>';
+  rd.style.display = 'none';
+  try {
+    const r = await api('/api/calls/simulate', {
+      method: 'POST',
+      body: JSON.stringify({
+        caller_number: document.getElementById('sim-phone').value,
+        ivr_digit:     document.getElementById('sim-ivr').value,
+        message:       document.getElementById('sim-msg').value,
+      })
+    });
+    rd.style.display = 'block';
+    rd.className = 'alert alert-jade';
+    rd.innerHTML = `✓ Simulation OK — Réponse IA : <em>${r.ai_response}</em>`;
+    toast('Simulation réussie !', 'jade');
+    setTimeout(loadCalls, 400);
+  } catch(e) {
+    rd.style.display = 'block';
+    rd.className = 'alert alert-crimson';
+    rd.textContent = `Erreur : ${e.message}`;
+  }
+  btn.disabled = false;
+  btn.innerHTML = '▶ Lancer';
+}
+
+loadCalls();
+</script>
+{% endblock %}

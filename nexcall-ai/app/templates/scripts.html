@@ -1,0 +1,171 @@
+{% extends "base.html" %}
+{% block title %}Script Builder{% endblock %}
+{% block content %}
+<div class="topbar">
+  <div class="topbar-left"><h1>Script Builder</h1><p>Editeur de comportement des agents IA</p></div>
+  <div class="topbar-right">
+    <button class="btn btn-ghost btn-sm" onclick="loadScripts()">↻</button>
+    <button class="btn btn-jade btn-sm" onclick="openCreate()">+ Nouveau script</button>
+  </div>
+</div>
+<div class="content">
+  <div id="scripts-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:14px">
+    <div style="text-align:center;padding:40px;grid-column:1/-1"><div class="spinner"></div></div>
+  </div>
+</div>
+
+<!-- Modal Editor -->
+<div class="modal-overlay" id="script-modal">
+  <div class="modal-box xl">
+    <div class="modal-head"><span class="modal-title" id="script-modal-title">Nouveau script</span><button class="modal-close" onclick="closeModal('script-modal')">✕</button></div>
+    <input type="hidden" id="s-id">
+    <div class="form-grid-2">
+      <div class="form-group"><label class="form-label">Nom du script *</label><input class="form-input" id="s-name" placeholder="Script Mutuelle Senior"></div>
+      <div class="form-group"><label class="form-label">Agent associe</label><select class="form-select" id="s-agent"><option value="">Aucun</option></select></div>
+    </div>
+
+    <div class="alert alert-jade" style="font-size:11.5px">Variables disponibles : <code>{{'{{'}}nom{{'}}'}}</code> <code>{{'{{'}}age{{'}}'}}</code> <code>{{'{{'}}ancienne_offre{{'}}'}}</code> <code>{{'{{'}}date_resiliation{{'}}'}}</code></div>
+
+    <div class="form-group"><label class="form-label">1. Introduction</label>
+      <textarea class="form-textarea" id="s-intro" style="min-height:70px" placeholder="Bonjour {{'{{'}}nom{{'}}'}}, je suis votre conseillere sante IA. Je vous contacte suite a la resiliation de votre mutuelle {{'{{'}}ancienne_offre{{'}}'}}..."></textarea></div>
+
+    <div class="form-group"><label class="form-label">2. Questions de qualification (une par ligne)</label>
+      <textarea class="form-textarea" id="s-qualif" style="min-height:90px" placeholder="Pourquoi avez-vous resilie votre mutuelle ?&#10;Cherchez-vous une couverture plus adaptee ?&#10;Quel est votre budget mensuel ?"></textarea></div>
+
+    <div class="form-group"><label class="form-label">3. Objections / Reponses (format: objection | reponse, une par ligne)</label>
+      <textarea class="form-textarea" id="s-objections" style="min-height:90px" placeholder="C'est trop cher | Je comprends, justement nos formules s'adaptent a votre budget&#10;Je n'ai pas le temps | Cela prend deux minutes, je peux vous rappeler si vous preferez"></textarea></div>
+
+    <div class="form-group"><label class="form-label">4. Proposition d'offre</label>
+      <textarea class="form-textarea" id="s-offer" style="min-height:70px" placeholder="Nous avons une formule qui couvre mieux le dentaire et l'optique pour un tarif proche de votre ancienne offre {{'{{'}}ancienne_offre{{'}}'}}..."></textarea></div>
+
+    <div class="form-group"><label class="form-label">5. Fermeture</label>
+      <textarea class="form-textarea" id="s-closing" style="min-height:60px" placeholder="Je vous remercie pour votre temps. Souhaitez-vous que je vous mette en relation avec un conseiller ?"></textarea></div>
+
+    <div class="modal-footer">
+      <button class="btn btn-jade" id="script-save-btn" onclick="saveScript()">Enregistrer</button>
+      <button class="btn btn-ghost" onclick="previewScript()">👁 Apercu</button>
+      <button class="btn btn-ghost" onclick="closeModal('script-modal')">Annuler</button>
+    </div>
+    <div id="preview-area" style="margin-top:14px;display:none"></div>
+  </div>
+</div>
+{% endblock %}
+{% block extra_scripts %}
+<script>
+let agentsCache = [];
+function closeModal(id){document.getElementById(id).classList.remove('open');}
+
+async function loadScripts(){
+  const [scripts, agents] = await Promise.all([
+    api('/api/scripts').catch(()=>[]),
+    api('/api/agents').catch(()=>[]),
+  ]);
+  agentsCache = agents;
+  const agentsMap = {}; agents.forEach(a=>agentsMap[a.id]=a);
+
+  const grid = document.getElementById('scripts-grid');
+  if(!scripts.length){
+    grid.innerHTML = `<div style="grid-column:1/-1"><div class="empty-state"><div class="empty-icon">📝</div><p>Aucun script. Creez votre premier script de conversation.</p></div></div>`;
+    return;
+  }
+  grid.innerHTML = scripts.map(s=>{
+    const agent = agentsMap[s.agent_id];
+    let qCount = 0; try { qCount = s.qualification ? s.qualification.split('\n').filter(x=>x.trim()).length : 0; } catch{}
+    let oCount = 0; try { oCount = s.objections ? s.objections.split('\n').filter(x=>x.trim()).length : 0; } catch{}
+    return `
+    <div class="card" style="padding:0">
+      <div style="padding:14px 16px;border-bottom:1px solid var(--border)">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start">
+          <div>
+            <div style="font-weight:700;font-size:14px;color:var(--text)">${s.name}</div>
+            <div style="font-size:11px;color:var(--text2);margin-top:2px">${agent?`${agent.avatar_emoji} ${agent.name}`:'Sans agent'}</div>
+          </div>
+          ${s.is_active?'<span class="badge badge-jade">✓ Actif</span>':'<span class="badge badge-gray">Inactif</span>'}
+        </div>
+      </div>
+      <div style="padding:12px 16px;display:flex;gap:8px;flex-wrap:wrap">
+        ${s.introduction?'<span class="badge badge-sky">Intro</span>':''}
+        ${qCount?`<span class="badge badge-blue">${qCount} questions</span>`:''}
+        ${oCount?`<span class="badge badge-amber">${oCount} objections</span>`:''}
+        ${s.offer_pitch?'<span class="badge badge-violet">Offre</span>':''}
+        ${s.closing?'<span class="badge badge-jade">Fermeture</span>':''}
+      </div>
+      <div style="padding:10px 14px;display:flex;gap:6px;border-top:1px solid var(--border)">
+        <button class="btn btn-outline btn-xs" onclick="editScript(${s.id})">✎ Editer</button>
+        <button class="btn btn-danger btn-xs" onclick="deleteScript(${s.id})">✕ Supprimer</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function fillAgentSelect(){
+  document.getElementById('s-agent').innerHTML = '<option value="">Aucun</option>' +
+    agentsCache.map(a=>`<option value="${a.id}">${a.avatar_emoji} ${a.name}</option>`).join('');
+}
+
+function openCreate(){
+  document.getElementById('script-modal-title').textContent='Nouveau script';
+  ['s-id','s-name','s-intro','s-qualif','s-objections','s-offer','s-closing'].forEach(id=>document.getElementById(id).value='');
+  fillAgentSelect();
+  document.getElementById('preview-area').style.display='none';
+  document.getElementById('script-modal').classList.add('open');
+}
+
+async function editScript(id){
+  const s = await api(`/api/scripts/${id}`);
+  document.getElementById('script-modal-title').textContent='Modifier script';
+  document.getElementById('s-id').value=id;
+  document.getElementById('s-name').value=s.name||'';
+  fillAgentSelect();
+  document.getElementById('s-agent').value=s.agent_id||'';
+  document.getElementById('s-intro').value=s.introduction||'';
+  document.getElementById('s-qualif').value=s.qualification||'';
+  document.getElementById('s-objections').value=s.objections||'';
+  document.getElementById('s-offer').value=s.offer_pitch||'';
+  document.getElementById('s-closing').value=s.closing||'';
+  document.getElementById('preview-area').style.display='none';
+  document.getElementById('script-modal').classList.add('open');
+}
+
+async function saveScript(){
+  const id=document.getElementById('s-id').value;
+  const name=document.getElementById('s-name').value.trim();
+  if(!name){toast('Le nom est requis','amber');return;}
+  const payload={
+    name, agent_id:parseInt(document.getElementById('s-agent').value)||null,
+    introduction:document.getElementById('s-intro').value||null,
+    qualification:document.getElementById('s-qualif').value||null,
+    objections:document.getElementById('s-objections').value||null,
+    offer_pitch:document.getElementById('s-offer').value||null,
+    closing:document.getElementById('s-closing').value||null,
+  };
+  const btn=document.getElementById('script-save-btn');btn.disabled=true;
+  try{
+    if(id){await api(`/api/scripts/${id}`,{method:'PUT',body:JSON.stringify(payload)});toast('Script mis a jour','jade');}
+    else{await api('/api/scripts',{method:'POST',body:JSON.stringify(payload)});toast('Script cree','jade');}
+    closeModal('script-modal');loadScripts();
+  }catch(e){toast(e.message,'red');}
+  btn.disabled=false;
+}
+
+function previewScript(){
+  const vars={nom:'Mme Dupont',age:'58',ancienne_offre:'Formule Confort+',date_resiliation:'15/01/2026'};
+  const OB=String.fromCharCode(123,123), CB=String.fromCharCode(125,125);
+  const fill=(t)=>{if(!t)return'';Object.keys(vars).forEach(k=>{t=t.replaceAll(OB+k+CB,vars[k]);});return t;};
+  const area=document.getElementById('preview-area');area.style.display='block';
+  area.innerHTML=`
+    <div class="card" style="background:var(--panel2)">
+      <div class="card-header"><span class="card-title">👁 Apercu avec variables d'exemple</span></div>
+      <div style="padding:14px;font-size:12.5px;line-height:1.7;color:var(--text)">
+        <p style="margin-bottom:10px"><strong style="color:var(--sky)">Intro :</strong> ${fill(document.getElementById('s-intro').value)||'—'}</p>
+        <p style="margin-bottom:10px"><strong style="color:var(--violet)">Offre :</strong> ${fill(document.getElementById('s-offer').value)||'—'}</p>
+        <p><strong style="color:var(--jade)">Fermeture :</strong> ${fill(document.getElementById('s-closing').value)||'—'}</p>
+      </div>
+    </div>`;
+}
+
+async function deleteScript(id){if(!confirm('Supprimer ce script ?'))return;await api(`/api/scripts/${id}`,{method:'DELETE'});toast('Supprime','amber');loadScripts();}
+
+loadScripts();
+</script>
+{% endblock %}

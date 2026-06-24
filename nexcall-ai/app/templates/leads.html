@@ -1,0 +1,253 @@
+{% extends "base.html" %}
+{% block title %}Leads{% endblock %}
+
+{% block content %}
+<div class="topbar">
+  <div class="topbar-left">
+    <h1>Leads</h1>
+    <p>Qualification et suivi des prospects</p>
+  </div>
+  <div class="topbar-right">
+    <select class="form-select" id="f-status" style="width:130px;padding:6px 10px" onchange="loadLeads()">
+      <option value="">Tous</option>
+      <option value="hot">🔥 Chauds</option>
+      <option value="warm">◈ Tièdes</option>
+      <option value="qualified">✓ Qualifiés</option>
+      <option value="new">✦ Nouveaux</option>
+      <option value="cold">❄ Froids</option>
+    </select>
+    <select class="form-select" id="f-interest" style="width:160px;padding:6px 10px" onchange="loadLeads()">
+      <option value="">Tous intérêts</option>
+      <option value="assurance_auto">Assurance Auto</option>
+      <option value="assurance_sante">Assurance Santé</option>
+      <option value="assurance_vie">Assurance Vie</option>
+      <option value="autre">Autre</option>
+    </select>
+    <button class="btn btn-ghost btn-sm" onclick="loadLeads()">↻</button>
+    <button class="btn btn-jade btn-sm" onclick="openCreateModal()">+ Nouveau lead</button>
+  </div>
+</div>
+
+<div class="content">
+  <div class="stats-row">
+    <div class="stat-card jade"><div class="stat-label">Total</div><div class="stat-value" id="s-total">—</div></div>
+    <div class="stat-card crimson"><div class="stat-label">Chauds 🔥</div><div class="stat-value" id="s-hot">—</div></div>
+    <div class="stat-card amber"><div class="stat-label">Tièdes</div><div class="stat-value" id="s-warm">—</div></div>
+    <div class="stat-card jade"><div class="stat-label">Qualifiés</div><div class="stat-value" id="s-qual">—</div></div>
+    <div class="stat-card sky"><div class="stat-label">Score moyen</div><div class="stat-value" id="s-avg" style="font-size:22px">—</div></div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">Liste des leads</span>
+      <span id="leads-count" style="font-size:11px;color:var(--text3);font-family:var(--font-mono)"></span>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>#</th><th>Contact</th><th>Téléphone</th><th>Intérêt</th>
+            <th>Score</th><th>Statut</th><th>Budget</th><th>Date</th><th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="leads-tbody">
+          <tr><td colspan="9" style="text-align:center;padding:32px"><div class="spinner"></div></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ── Create / Edit Modal ──────────────────────────────────────── -->
+<div class="modal-overlay" id="lead-modal">
+  <div class="modal-box">
+    <div class="modal-head">
+      <span class="modal-title" id="modal-lead-title">Nouveau lead</span>
+      <button class="modal-close" onclick="closeLeadModal()">✕</button>
+    </div>
+    <input type="hidden" id="l-id">
+    <div class="form-grid-2">
+      <div class="form-group">
+        <label class="form-label">Prénom</label>
+        <input class="form-input" id="l-fname" placeholder="Jean">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Nom</label>
+        <input class="form-input" id="l-lname" placeholder="Dupont">
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Téléphone *</label>
+      <input class="form-input" id="l-phone" placeholder="+33600000000">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Email</label>
+      <input class="form-input" id="l-email" type="email" placeholder="jean@exemple.fr">
+    </div>
+    <div class="form-grid-2">
+      <div class="form-group">
+        <label class="form-label">Intérêt</label>
+        <select class="form-select" id="l-interest">
+          <option value="">— Sélectionner —</option>
+          <option value="assurance_auto">Assurance Auto</option>
+          <option value="assurance_sante">Assurance Santé</option>
+          <option value="assurance_vie">Assurance Vie</option>
+          <option value="assurance_habitation">Ass. Habitation</option>
+          <option value="autre">Autre</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Score (0–100)</label>
+        <input class="form-input" id="l-score" type="number" min="0" max="100" value="0">
+      </div>
+    </div>
+    <div class="form-grid-2">
+      <div class="form-group">
+        <label class="form-label">Budget</label>
+        <input class="form-input" id="l-budget" placeholder="80–100€/mois">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Urgence</label>
+        <select class="form-select" id="l-urgency">
+          <option value="">— Sélectionner —</option>
+          <option value="immediate">Immédiate</option>
+          <option value="3months">Dans 3 mois</option>
+          <option value="exploring">Exploration</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Notes</label>
+      <textarea class="form-textarea" id="l-notes" style="min-height:75px"></textarea>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-jade" id="lead-save-btn" onclick="saveLead()">Enregistrer</button>
+      <button class="btn btn-ghost" onclick="closeLeadModal()">Annuler</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+async function loadLeads() {
+  const status   = document.getElementById('f-status').value;
+  const interest = document.getElementById('f-interest').value;
+  let url = '/api/leads?limit=200';
+  if (status)   url += '&status='   + status;
+  if (interest) url += '&interest=' + interest;
+
+  const [leads, stats] = await Promise.all([
+    api(url).catch(() => []),
+    api('/api/leads/stats').catch(() => ({}))
+  ]);
+
+  document.getElementById('s-total').textContent = stats.total ?? '—';
+  document.getElementById('s-hot').textContent   = stats.hot ?? '—';
+  document.getElementById('s-warm').textContent  = stats.warm ?? '—';
+  document.getElementById('s-qual').textContent  = stats.qualified ?? '—';
+  document.getElementById('s-avg').textContent   = stats.avg_score ?? '—';
+  document.getElementById('leads-count').textContent = `${leads.length} résultat(s)`;
+
+  const tbody = document.getElementById('leads-tbody');
+  if (!leads.length) {
+    tbody.innerHTML = '<tr><td colspan="9"><div class="empty-state"><div class="empty-icon">👤</div><p>Aucun lead trouvé</p></div></td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = leads.map(l => `
+    <tr>
+      <td class="mono" style="color:var(--text3)">#${l.id}</td>
+      <td>
+        <div style="font-weight:600">${l.full_name}</div>
+        ${l.email ? `<div style="font-size:11px;color:var(--text3)">${l.email}</div>` : ''}
+      </td>
+      <td class="phone-num">${l.phone}</td>
+      <td style="font-size:11.5px">${l.interest ? `<span class="badge badge-sky">${l.interest.replace(/_/g,' ')}</span>` : '—'}</td>
+      <td>${fScore(l.score)}</td>
+      <td>${badgeLead(l.status)}</td>
+      <td style="font-size:11.5px;color:var(--text3)">${l.budget || '—'}</td>
+      <td style="font-size:11px;color:var(--text3)">${fDate(l.created_at)}</td>
+      <td>
+        <div style="display:flex;gap:5px">
+          <button class="btn btn-ghost btn-xs" onclick="editLead(${l.id})">✎</button>
+          <button class="btn btn-danger btn-xs" onclick="deleteLead(${l.id})">✕</button>
+        </div>
+      </td>
+    </tr>
+  `).join('');
+}
+
+function openCreateModal() {
+  document.getElementById('modal-lead-title').textContent = 'Nouveau lead';
+  document.getElementById('l-id').value = '';
+  ['fname','lname','phone','email','budget','notes'].forEach(f => document.getElementById('l-'+f).value = '');
+  document.getElementById('l-interest').value = '';
+  document.getElementById('l-urgency').value = '';
+  document.getElementById('l-score').value = '0';
+  document.getElementById('lead-modal').classList.add('open');
+}
+
+async function editLead(id) {
+  const l = await api(`/api/leads/${id}`);
+  document.getElementById('modal-lead-title').textContent = 'Modifier le lead';
+  document.getElementById('l-id').value       = id;
+  document.getElementById('l-fname').value    = l.first_name  || '';
+  document.getElementById('l-lname').value    = l.last_name   || '';
+  document.getElementById('l-phone').value    = l.phone       || '';
+  document.getElementById('l-email').value    = l.email       || '';
+  document.getElementById('l-interest').value = l.interest    || '';
+  document.getElementById('l-score').value    = l.score       || 0;
+  document.getElementById('l-budget').value   = l.budget      || '';
+  document.getElementById('l-urgency').value  = l.urgency     || '';
+  document.getElementById('l-notes').value    = l.notes       || '';
+  document.getElementById('lead-modal').classList.add('open');
+}
+
+function closeLeadModal() { document.getElementById('lead-modal').classList.remove('open'); }
+
+async function saveLead() {
+  const id = document.getElementById('l-id').value;
+  const phone = document.getElementById('l-phone').value.trim();
+  if (!phone) { toast('Le téléphone est requis', 'amber'); return; }
+
+  const payload = {
+    phone,
+    first_name: document.getElementById('l-fname').value    || null,
+    last_name:  document.getElementById('l-lname').value    || null,
+    email:      document.getElementById('l-email').value    || null,
+    interest:   document.getElementById('l-interest').value || null,
+    score:      parseFloat(document.getElementById('l-score').value) || 0,
+    budget:     document.getElementById('l-budget').value   || null,
+    urgency:    document.getElementById('l-urgency').value  || null,
+    notes:      document.getElementById('l-notes').value    || null,
+  };
+
+  const btn = document.getElementById('lead-save-btn');
+  btn.disabled = true;
+  try {
+    if (id) {
+      await api(`/api/leads/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
+      toast('Lead mis à jour !', 'jade');
+    } else {
+      await api('/api/leads', { method: 'POST', body: JSON.stringify(payload) });
+      toast('Lead créé !', 'jade');
+    }
+    closeLeadModal();
+    loadLeads();
+  } catch(e) { toast(e.message, 'crimson'); }
+  btn.disabled = false;
+}
+
+async function deleteLead(id) {
+  if (!confirm('Supprimer ce lead définitivement ?')) return;
+  try {
+    await api(`/api/leads/${id}`, { method: 'DELETE' });
+    toast('Lead supprimé', 'amber');
+    loadLeads();
+  } catch(e) { toast(e.message, 'crimson'); }
+}
+
+loadLeads();
+</script>
+{% endblock %}

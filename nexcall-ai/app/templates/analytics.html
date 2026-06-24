@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block title %}Analytics{% endblock %}
+{% block content %}
+<div class="topbar">
+  <div class="topbar-left"><h1>Analytics</h1><p>Resultats et performance des appels</p></div>
+  <div class="topbar-right"><button class="btn btn-ghost btn-sm" onclick="loadAnalytics()">↻ Actualiser</button></div>
+</div>
+<div class="content">
+  <div class="stats-grid" id="analytics-stats"></div>
+
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
+    <div class="card">
+      <div class="card-header"><span class="card-title">Taux de reponse</span></div>
+      <div style="padding:20px" id="rates-area"><div class="spinner"></div></div>
+    </div>
+    <div class="card">
+      <div class="card-header"><span class="card-title">Repartition par statut</span></div>
+      <div style="padding:16px" id="status-breakdown"><div class="spinner"></div></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><span class="card-title">Performance par agent</span></div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Agent</th><th>Service</th><th>Appels</th><th>Leads</th><th>Conversion</th></tr></thead>
+        <tbody id="agent-perf"><tr><td colspan="5" style="text-align:center;padding:24px"><div class="spinner"></div></td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block extra_scripts %}
+<script>
+function bar(label, value, max, color){
+  const pct = max>0 ? Math.round(value/max*100) : 0;
+  return `<div style="margin-bottom:12px">
+    <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px">
+      <span style="color:var(--text)">${label}</span><span class="mono" style="color:${color}">${value}</span>
+    </div>
+    <div class="progress-track" style="height:8px"><div class="progress-fill" style="width:${pct}%;background:${color}"></div></div>
+  </div>`;
+}
+
+async function loadAnalytics(){
+  const [ov, byStatus, byAgent] = await Promise.all([
+    api('/api/analytics/overview').catch(()=>({})),
+    api('/api/analytics/by-status').catch(()=>[]),
+    api('/api/analytics/by-agent').catch(()=>[]),
+  ]);
+
+  document.getElementById('analytics-stats').innerHTML = `
+    <div class="stat-card jade"><div class="stat-label">Total appels</div><div class="stat-value">${ov.total_calls||0}</div></div>
+    <div class="stat-card blue"><div class="stat-label">Repondus</div><div class="stat-value">${ov.answered||0}</div><div class="stat-sub">${ov.answer_rate||0}% taux</div></div>
+    <div class="stat-card amber"><div class="stat-label">Sans reponse</div><div class="stat-value">${ov.no_answer||0}</div></div>
+    <div class="stat-card jade"><div class="stat-label">Interesses</div><div class="stat-value">${ov.interested||0}</div></div>
+    <div class="stat-card red"><div class="stat-label">Refus</div><div class="stat-value">${ov.refused||0}</div></div>
+    <div class="stat-card violet"><div class="stat-label">Transferts</div><div class="stat-value">${ov.transfers||0}</div><div class="stat-sub">${ov.transfer_rate||0}% des repondus</div></div>
+    <div class="stat-card red"><div class="stat-label">Blacklist</div><div class="stat-value">${ov.blacklist||0}</div></div>
+    <div class="stat-card sky"><div class="stat-label">Duree moy.</div><div class="stat-value" style="font-size:20px">${fDur(Math.round(ov.avg_duration||0))}</div></div>`;
+
+  const maxRate = Math.max(ov.answered||0, ov.no_answer||0, ov.transfers||0, 1);
+  document.getElementById('rates-area').innerHTML =
+    bar('Repondus', ov.answered||0, maxRate, 'var(--jade)') +
+    bar('Sans reponse', ov.no_answer||0, maxRate, 'var(--amber)') +
+    bar('Transferts conseiller', ov.transfers||0, maxRate, 'var(--violet)') +
+    bar('Interesses', ov.interested||0, maxRate, 'var(--blue)') +
+    bar('Refus', ov.refused||0, maxRate, 'var(--red)');
+
+  const maxStatus = Math.max(...byStatus.map(s=>s.count), 1);
+  const colors=['var(--sky)','var(--blue)','var(--jade)','var(--amber)','var(--violet)','var(--red)'];
+  document.getElementById('status-breakdown').innerHTML = byStatus.length ?
+    byStatus.map((s,i)=>bar(s.label, s.count, maxStatus, colors[i%colors.length])).join('') :
+    '<div class="empty-state"><p>Aucune donnee</p></div>';
+
+  const tb = document.getElementById('agent-perf');
+  tb.innerHTML = byAgent.length ? byAgent.map(a=>`
+    <tr>
+      <td style="font-weight:600">${a.name}</td>
+      <td style="font-size:11.5px;color:var(--text2)">${a.service}</td>
+      <td class="mono">${a.total_calls}</td>
+      <td class="mono" style="color:var(--amber)">${a.total_leads}</td>
+      <td><span class="badge ${a.conversion>=50?'badge-jade':a.conversion>=20?'badge-amber':'badge-gray'}">${a.conversion}%</span></td>
+    </tr>`).join('') : '<tr><td colspan="5"><div class="empty-state"><p>Aucun agent</p></div></td></tr>';
+}
+
+loadAnalytics();
+</script>
+{% endblock %}

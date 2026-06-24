@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% block title %}Prospects{% endblock %}
+{% block content %}
+<div class="topbar">
+  <div class="topbar-left"><h1>Prospects</h1><p>Listes d'appels importees pour vos campagnes</p></div>
+  <div class="topbar-right">
+    <select class="form-select" id="f-campaign" style="width:200px;padding:6px 10px" onchange="loadProspects()">
+      <option value="">Toutes campagnes</option>
+    </select>
+    <select class="form-select" id="f-status" style="width:150px;padding:6px 10px" onchange="loadProspects()">
+      <option value="">Tous statuts</option>
+      <option value="pending">En attente</option>
+      <option value="calling">Appel en cours</option>
+      <option value="reached">Joints</option>
+      <option value="converted">Convertis</option>
+      <option value="callback">Rappel</option>
+    </select>
+    <button class="btn btn-ghost btn-sm" onclick="loadProspects()">↻</button>
+  </div>
+</div>
+<div class="content">
+  <div class="stats-grid" id="prospects-stats"></div>
+  <div class="card">
+    <div class="card-header"><span class="card-title">Liste des prospects</span><span id="prospects-count" style="font-size:11px;color:var(--text2);font-family:var(--mono)"></span></div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>#</th><th>Contact</th><th>Telephone</th><th>Ville</th><th>Statut</th><th>Tentatives</th><th>Resultat IA</th><th>Actions</th></tr></thead>
+        <tbody id="prospects-tbody"><tr><td colspan="8" style="text-align:center;padding:32px"><div class="spinner"></div></td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block extra_scripts %}
+<script>
+async function loadFilters() {
+  const camps = await api('/api/campaigns').catch(()=>[]);
+  const sel = document.getElementById('f-campaign');
+  sel.innerHTML = '<option value="">Toutes campagnes</option>' + camps.map(c=>`<option value="${c.id}">${c.name}</option>`).join('');
+}
+
+async function loadProspects() {
+  const campId = document.getElementById('f-campaign').value;
+  const status = document.getElementById('f-status').value;
+  let url = '/api/prospects?limit=200';
+  if (campId) url += '&campaign_id=' + campId;
+  if (status) url += '&status=' + status;
+
+  const [prospects, stats] = await Promise.all([
+    api(url).catch(()=>[]),
+    api('/api/prospects/stats' + (campId ? `?campaign_id=${campId}` : '')).catch(()=>({})),
+  ]);
+
+  document.getElementById('prospects-stats').innerHTML = `
+    <div class="stat-card jade"><div class="stat-label">Total</div><div class="stat-value">${stats.total||0}</div></div>
+    <div class="stat-card sky"><div class="stat-label">En attente</div><div class="stat-value">${stats.pending||0}</div></div>
+    <div class="stat-card amber"><div class="stat-label">Joints</div><div class="stat-value">${stats.reached||0}</div></div>
+    <div class="stat-card violet"><div class="stat-label">Convertis</div><div class="stat-value">${stats.converted||0}</div></div>
+    <div class="stat-card blue"><div class="stat-label">Rappels</div><div class="stat-value">${stats.callback||0}</div></div>`;
+
+  document.getElementById('prospects-count').textContent = `${prospects.length} resultat(s)`;
+  const tbody = document.getElementById('prospects-tbody');
+  if (!prospects.length) {
+    tbody.innerHTML = '<tr><td colspan="8"><div class="empty-state"><div class="empty-icon">👤</div><p>Aucun prospect trouve</p></div></td></tr>';
+    return;
+  }
+  tbody.innerHTML = prospects.map(p => `
+    <tr>
+      <td class="mono" style="color:var(--text2)">#${p.id}</td>
+      <td><div style="font-weight:600">${p.full_name}</div>${p.birth_date?`<div style="font-size:10px;color:var(--text2)">${p.birth_date}</div>`:''}</td>
+      <td class="phone-num">${p.phone}</td>
+      <td style="font-size:11.5px">${p.city||'—'}</td>
+      <td>${badgeProspect(p.status)}</td>
+      <td class="mono">${p.attempt_count}</td>
+      <td style="font-size:11px">${p.ai_result?badgeIntent(p.ai_result):'—'}</td>
+      <td>
+        <div style="display:flex;gap:5px">
+          <button class="btn btn-jade btn-xs" onclick="callProspect(${p.id})" title="Appeler maintenant">📞</button>
+          <button class="btn btn-danger btn-xs" onclick="deleteProspect(${p.id})">✕</button>
+        </div>
+      </td>
+    </tr>`).join('');
+}
+
+async function callProspect(id) {
+  if (!confirm('Lancer l\'appel vers ce prospect maintenant ?')) return;
+  try {
+    const r = await api(`/api/prospects/${id}/call`, {method:'POST'});
+    toast(r.message, 'jade');
+    loadProspects();
+  } catch(e) { toast(e.message, 'red'); }
+}
+
+async function deleteProspect(id) {
+  if (!confirm('Supprimer ce prospect ?')) return;
+  await api(`/api/prospects/${id}`, {method:'DELETE'});
+  toast('Prospect supprime', 'amber');
+  loadProspects();
+}
+
+loadFilters().then(loadProspects);
+</script>
+{% endblock %}
