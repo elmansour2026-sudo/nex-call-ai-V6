@@ -73,99 +73,53 @@ class RingoverService:
                 return {"success": False, "error": str(e)}
 
     async def make_outbound_call(self, from_number: str, to_number: str, webhook_url: str = "") -> dict:
-        """Lance un VRAI appel sortant via le mecanisme callback de Ringover.
-        
-        CORRECTION CRITIQUE : Ringover V2 exige un 'device_id' ou un 'user_id' 
-        dans le champ 'from', et non un numéro de téléphone au format string.
+        """
+        Version corrigée suite au diagnostic de l'Agent Railway.
+        Utilisation des clés explicites 'from_number' et 'to_number'.
         """
         if not self._is_ready():
-            logger.error("[RINGOVER ERROR] Ringover non configure (cle API manquante)")
+            logger.error("[RINGOVER ERROR] Cle API manquante")
             return {"success": False, "error": "Cle API Ringover manquante"}
 
-        # 1. Récupérer dynamiquement le premier Device ID ou User ID disponible
-        from_id = None
-        async with httpx.AsyncClient(timeout=RINGOVER_TIMEOUT) as client:
-            try:
-                user_res = await client.get(f"{self._base_url}/users", headers=self._headers())
-                if user_res.status_code == 200:
-                    users_data = user_res.json().get("users", [])
-                    if users_data:
-                        # On cherche un device actif ou on prend l'ID du premier utilisateur
-                        first_user = users_data[0]
-                        from_id = first_user.get("user_id")
-                        # Si l'utilisateur a des devices, on prend le premier device_id
-                        if first_user.get("devices"):
-                            from_id = first_user["devices"][0].get("device_id")
-            except Exception as e:
-                logger.warning(f"[RINGOVER] Impossible de lister les users/devices: {e}")
+        # Formatage strict des numéros
+        caller = from_number.strip() if from_number else settings.RINGOVER_PHONE_NUMBER
+        if caller and not caller.startswith('+'):
+            caller = f"+{caller}"
 
-        # Si on n'a pas trouvé d'ID via l'API, on tente une valeur par défaut ou le numéro brut
-        if not from_id:
-            # Nettoyage au cas où
-            from_id = from_number.strip() if from_number else settings.RINGOVER_PHONE_NUMBER
-            if from_id and not from_id.startswith('+') and from_id.isdigit():
-                # Si c'est juste des chiffres, on laisse passer, mais l'API préfère l'ID numérique
-                pass
-
-        # 2. Formater le numéro de destination (le prospect)
         target = to_number.strip() if to_number else ""
         if target and not target.startswith('+'):
             target = f"+{target}"
 
-        endpoint = (settings.RINGOVER_CALL_ENDPOINT or "/callback").strip()
-        if not endpoint.startswith("/"):
-            endpoint = "/" + endpoint
-        url = f"{self._base_url}{endpoint}"
-
-        # PAYLOAD OFFICIEL V2
+        # PAYLOAD SELON LE REQUISITION DE L'API V2
         payload = {
-            "from": from_id,  # C'est l'ID du device/user qui va sonner en premier
-            "to": target      # Le numéro du prospect
+            "from_number": caller,
+            "to_number": target
         }
         if webhook_url:
             payload["webhook_url"] = webhook_url
 
-        logger.info(f"[RINGOVER CALL START] target={target} from_id={from_id} url={url}")
+        url = f"{self._base_url.rstrip('/')}/callback"
+        
+        logger.info(f"[RINGOVER CALL START] Sending payload to {url} : {payload}")
 
         async with httpx.AsyncClient(timeout=RINGOVER_TIMEOUT) as client:
             try:
                 r = await client.post(url, headers=self._headers(), json=payload)
+                body_text = r.text
+                
+                logger.info(f"[RINGOVER RESPONSE] Status: {r.status_code} | Body: {body_text or '(vide)'}")
+                
+                if 200 <= r.status_code < 300:
+                    return {"success": True, "status_code": r.status_code, "data": r.json() if body_text else {}}
+                
+                return {
+                    "success": False,
+                    "status_code": r.status_code,
+                    "error": f"HTTP {r.status_code}: {body_text or 'reponse vide'}"
+                }
             except Exception as e:
-                logger.error(f"[RINGOVER ERROR] exception reseau vers Ringover: {e}")
-                return {"success": False, "error": f"Erreur reseau Ringover: {e}"}
-
-            body_text = ""
-            try:
-                body_text = r.text[:1000]
-            except Exception:
-                pass
-
-            if 200 <= r.status_code < 300:
-                data = {}
-                try:
-                    data = r.json()
-                except Exception:
-                    pass
-                call_id = None
-                if isinstance(data, dict):
-                    call_id = (data.get("call_id") or data.get("id")
-                               or data.get("call_uuid") or data.get("uuid"))
-                logger.info(
-                    f"[RINGOVER RESPONSE] status={r.status_code} "
-                    f"call_id={call_id} response={body_text or '(vide)'}"
-                )
-                return {"success": True, "status_code": r.status_code,
-                        "call_id": str(call_id) if call_id else None, "data": data}
-
-            logger.error(
-                f"[RINGOVER ERROR] status={r.status_code} response={body_text or '(vide)'} "
-                f"(appel depuis ID {from_id} -> {target} REFUSE)"
-            )
-            return {
-                "success": False,
-                "status_code": r.status_code,
-                "error": f"HTTP {r.status_code}: {body_text or 'reponse vide'}",
-            }
+                logger.error(f"[RINGOVER EXCEPTION]: {str(e)}")
+                return {"success": False, "error": str(e)}
     async def hangup_call(self, call_id: str) -> dict:
         if not self._is_ready():
             return {"success": False, "error": "API non configuree"}
