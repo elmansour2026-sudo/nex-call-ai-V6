@@ -75,30 +75,36 @@ class RingoverService:
     async def make_outbound_call(self, from_number: str, to_number: str, webhook_url: str = "") -> dict:
         """Lance un VRAI appel sortant via le mecanisme callback de Ringover.
 
-        IMPORTANT : chez Ringover, un appel sortant se declenche via l'endpoint
-        callback (POST /callback), PAS via /calls (qui sert a LISTER/RECHERCHER
-        les appels et renvoie toujours 200 — d'ou les faux succes precedents).
-
-        Fonctionnement en 2 temps :
-          1. Ringover fait sonner le device associe a `from_number` (votre ligne).
-          2. Des que c'est decroche, Ringover compose `to_number` (la cible).
-
-        Le succes n'est renvoye QUE si Ringover repond avec un code 2xx.
+        IMPORTANT : Correction des clés du payload pour correspondre exactement 
+        à l'API Ringover V2 : 'from' et 'to'.
         """
         if not self._is_ready():
             logger.error("[RINGOVER ERROR] Ringover non configure (cle API manquante)")
             return {"success": False, "error": "Cle API Ringover manquante"}
+
+        # Nettoyage et formatage strict des numéros (suppression espaces et s'assurer du +)
+        caller = from_number.strip() if from_number else ""
+        if caller and not caller.startswith('+'):
+            caller = f"+{caller}"
+
+        target = to_number.strip() if to_number else ""
+        if target and not target.startswith('+'):
+            target = f"+{target}"
 
         endpoint = (settings.RINGOVER_CALL_ENDPOINT or "/callback").strip()
         if not endpoint.startswith("/"):
             endpoint = "/" + endpoint
         url = f"{self._base_url}{endpoint}"
 
-        payload = {"from_number": from_number, "to_number": to_number}
+        # PAYLOAD CORRECT : Ringover attend 'from' et 'to' pour l'endpoint /callback
+        payload = {
+            "from": caller, 
+            "to": target
+        }
         if webhook_url:
             payload["webhook_url"] = webhook_url
 
-        logger.info(f"[RINGOVER CALL START] phone={to_number} from={from_number} url={url}")
+        logger.info(f"[RINGOVER CALL START] phone={target} from={caller} url={url}")
 
         async with httpx.AsyncClient(timeout=RINGOVER_TIMEOUT) as client:
             try:
@@ -132,14 +138,13 @@ class RingoverService:
 
             logger.error(
                 f"[RINGOVER ERROR] status={r.status_code} response={body_text or '(vide)'} "
-                f"(appel {from_number} -> {to_number} REFUSE par Ringover)"
+                f"(appel {caller} -> {target} REFUSE par Ringover)"
             )
             return {
                 "success": False,
                 "status_code": r.status_code,
                 "error": f"HTTP {r.status_code}: {body_text or 'reponse vide'}",
             }
-
     async def hangup_call(self, call_id: str) -> dict:
         if not self._is_ready():
             return {"success": False, "error": "API non configuree"}
