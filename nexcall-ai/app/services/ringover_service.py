@@ -74,19 +74,40 @@ class RingoverService:
 
     async def make_outbound_call(self, from_number: str, to_number: str, webhook_url: str = "") -> dict:
         """Lance un VRAI appel sortant via le mecanisme callback de Ringover.
-
-        IMPORTANT : Correction des clés du payload pour correspondre exactement 
-        à l'API Ringover V2 : 'from' et 'to'.
+        
+        CORRECTION CRITIQUE : Ringover V2 exige un 'device_id' ou un 'user_id' 
+        dans le champ 'from', et non un numéro de téléphone au format string.
         """
         if not self._is_ready():
             logger.error("[RINGOVER ERROR] Ringover non configure (cle API manquante)")
             return {"success": False, "error": "Cle API Ringover manquante"}
 
-        # Nettoyage et formatage strict des numéros (suppression espaces et s'assurer du +)
-        caller = from_number.strip() if from_number else ""
-        if caller and not caller.startswith('+'):
-            caller = f"+{caller}"
+        # 1. Récupérer dynamiquement le premier Device ID ou User ID disponible
+        from_id = None
+        async with httpx.AsyncClient(timeout=RINGOVER_TIMEOUT) as client:
+            try:
+                user_res = await client.get(f"{self._base_url}/users", headers=self._headers())
+                if user_res.status_code == 200:
+                    users_data = user_res.json().get("users", [])
+                    if users_data:
+                        # On cherche un device actif ou on prend l'ID du premier utilisateur
+                        first_user = users_data[0]
+                        from_id = first_user.get("user_id")
+                        # Si l'utilisateur a des devices, on prend le premier device_id
+                        if first_user.get("devices"):
+                            from_id = first_user["devices"][0].get("device_id")
+            except Exception as e:
+                logger.warning(f"[RINGOVER] Impossible de lister les users/devices: {e}")
 
+        # Si on n'a pas trouvé d'ID via l'API, on tente une valeur par défaut ou le numéro brut
+        if not from_id:
+            # Nettoyage au cas où
+            from_id = from_number.strip() if from_number else settings.RINGOVER_PHONE_NUMBER
+            if from_id and not from_id.startswith('+') and from_id.isdigit():
+                # Si c'est juste des chiffres, on laisse passer, mais l'API préfère l'ID numérique
+                pass
+
+        # 2. Formater le numéro de destination (le prospect)
         target = to_number.strip() if to_number else ""
         if target and not target.startswith('+'):
             target = f"+{target}"
@@ -96,15 +117,15 @@ class RingoverService:
             endpoint = "/" + endpoint
         url = f"{self._base_url}{endpoint}"
 
-        # PAYLOAD CORRECT : Ringover attend 'from' et 'to' pour l'endpoint /callback
+        # PAYLOAD OFFICIEL V2
         payload = {
-            "from": caller, 
-            "to": target
+            "from": from_id,  # C'est l'ID du device/user qui va sonner en premier
+            "to": target      # Le numéro du prospect
         }
         if webhook_url:
             payload["webhook_url"] = webhook_url
 
-        logger.info(f"[RINGOVER CALL START] phone={target} from={caller} url={url}")
+        logger.info(f"[RINGOVER CALL START] target={target} from_id={from_id} url={url}")
 
         async with httpx.AsyncClient(timeout=RINGOVER_TIMEOUT) as client:
             try:
@@ -138,7 +159,7 @@ class RingoverService:
 
             logger.error(
                 f"[RINGOVER ERROR] status={r.status_code} response={body_text or '(vide)'} "
-                f"(appel {caller} -> {target} REFUSE par Ringover)"
+                f"(appel depuis ID {from_id} -> {target} REFUSE)"
             )
             return {
                 "success": False,
